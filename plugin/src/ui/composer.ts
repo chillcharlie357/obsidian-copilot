@@ -197,37 +197,88 @@ export class Composer {
     const tokenLen = trigger.query.length + 1; // 触发符 + 已输入
     const start = Math.max(0, end - tokenLen);
     const textNode = node as Text;
-    const tail = textNode.data.slice(end);
     textNode.data = textNode.data.slice(0, start);
 
-    const chip = document.createElement("span");
-    chip.contentEditable = "false";
-    chip.className = `dsh-chip${trigger.kind === "mention" && item.meta && (item.meta as { path?: string }).path?.endsWith("/") ? " dsh-chip-folder" : ""}`;
+    let chip: HTMLElement;
     if (trigger.kind === "mention") {
       const meta = item.meta as { name: string; path: string } | undefined;
-      chip.dataset.name = meta?.name ?? item.label;
-      chip.dataset.path = meta?.path ?? "";
-      chip.textContent = `@${meta?.name ?? item.label}${meta?.path?.endsWith("/") ? "/" : ""}`;
+      chip = this.makeMentionChip(meta?.name ?? item.label, meta?.path ?? "");
     } else {
       const meta = item.meta as { name: string; hint?: string } | undefined;
       const name = meta?.name ?? item.label.replace(/^\//, "");
-      chip.dataset.command = name;
-      chip.textContent = `/${name}`;
+      chip = this.makeCommandChip(name);
       if (meta?.hint) this.hintEl.setText(`/${name} — ${meta.hint}`);
       this.options.onCommandSelected?.(name);
     }
 
-    range.setStart(textNode, start);
+    this.placeChipAfter(chip, textNode, start);
+    this.active = null;
+    this.editor.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  // -------------------------------------------------------------------------
+  // chip 构造与插入（选择器 / 右键菜单 / 拖拽共用）
+  // -------------------------------------------------------------------------
+
+  private makeMentionChip(name: string, path: string): HTMLElement {
+    const chip = document.createElement("span");
+    chip.contentEditable = "false";
+    chip.className = `dsh-chip${path.endsWith("/") ? " dsh-chip-folder" : ""}`;
+    chip.dataset.name = name;
+    chip.dataset.path = path;
+    chip.textContent = `@${name}${path.endsWith("/") ? "/" : ""}`;
+    return chip;
+  }
+
+  private makeCommandChip(name: string): HTMLElement {
+    const chip = document.createElement("span");
+    chip.contentEditable = "false";
+    chip.className = "dsh-chip";
+    chip.dataset.command = name;
+    chip.textContent = `/${name}`;
+    return chip;
+  }
+
+  /** 在指定文本节点 offset 之后插入 chip + 尾随空格，并把光标移到空格后。 */
+  private placeChipAfter(chip: HTMLElement, textNode: Text, offset: number): void {
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.setStart(textNode, offset);
     range.collapse(true);
     range.insertNode(chip);
     const space = document.createTextNode(" ");
     chip.after(space);
     range.setStart(space, 1);
     range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
 
-    this.active = null;
+  /** 在编辑器末尾插入 chip（编辑器未聚焦时使用：拖拽/右键菜单）。 */
+  private appendChipAtEnd(chip: HTMLElement): void {
+    this.editor.appendChild(chip);
+    this.editor.appendChild(document.createTextNode(" "));
+    this.focus();
+  }
+
+  /** 外部入口：追加一个文件/文件夹引用 chip。 */
+  insertMentionChip(name: string, path: string): void {
+    this.appendChipAtEnd(this.makeMentionChip(name, path));
+    this.editor.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  /** 外部入口：追加划选文本上下文（引用块 + 源文件 chip）。 */
+  insertSelectionContext(name: string, path: string, selection: string, source: string): void {
+    const maxLen = 2000;
+    const text = selection.length > maxLen ? `${selection.slice(0, maxLen)}\n…[划选内容过长已截断]` : selection;
+    const quote = text
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+    if (path !== "") this.appendChipAtEnd(this.makeMentionChip(name, path));
+    this.editor.appendChild(document.createTextNode(`\n${quote}\n`));
+    this.editor.createEl("div", { cls: "dsh-quote-source", text: `（选段来源：${source}）` });
+    this.focus();
     this.editor.dispatchEvent(new Event("input", { bubbles: true }));
   }
 

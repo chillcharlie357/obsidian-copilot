@@ -7,6 +7,7 @@ import {
   Modal,
   Notice,
   TAbstractFile,
+  TFolder,
   TFile,
   WorkspaceLeaf,
   setIcon,
@@ -112,6 +113,24 @@ export class ChatView extends ItemView {
 
     // ---------- 事件 ----------
     this.register(this.service.on((event, payload) => this.onServiceEvent(event, payload)));
+
+    // ---------- 文件拖拽：从文件树拖入即插入引用 chip ----------
+    this.registerDomEvent(this.contentEl, "dragover", (ev: DragEvent) => {
+      if (this.dragHasFile(ev)) {
+        ev.preventDefault();
+        this.contentEl.addClass("dsh-drag-over");
+      }
+    });
+    this.registerDomEvent(this.contentEl, "dragleave", (ev: DragEvent) => {
+      if (!this.contentEl.contains(ev.relatedTarget as Node | null)) {
+        this.contentEl.removeClass("dsh-drag-over");
+      }
+    });
+    this.registerDomEvent(this.contentEl, "drop", (ev: DragEvent) => {
+      ev.preventDefault();
+      this.contentEl.removeClass("dsh-drag-over");
+      this.onDropFile(ev);
+    });
 
     // ---------- vault 变更监听：显示 agent 修改的文件 ----------
     this.registerEvent(this.app.vault.on("modify", (file) => this.onVaultChange(file)));
@@ -352,6 +371,76 @@ export class ChatView extends ItemView {
     const record = this.threads.get(threadId);
     if (!record?.sessionId) return;
     this.service.cancel(threadId, record.sessionId);
+  }
+
+  // -------------------------------------------------------------------------
+  // 右键划词 / 文件拖拽：把上下文插入输入框
+  // -------------------------------------------------------------------------
+
+  /** 编辑器划选文本 → 「添加到 Copilot」右键菜单入口。 */
+  insertSelectionContext(file: TFile | null, selection: string, fromLine: number, toLine: number): void {
+    const name = file?.basename ?? "当前笔记";
+    const path = file?.path ?? "";
+    const source = path === "" ? `第 ${fromLine}–${toLine} 行` : `${path} 第 ${fromLine}–${toLine} 行`;
+    this.composer.insertSelectionContext(name, path, selection, source);
+    this.composer.focus();
+  }
+
+  private dragHasFile(ev: DragEvent): boolean {
+    const types = Array.from(ev.dataTransfer?.types ?? []);
+    return types.includes("text/uri-list") || types.includes("text/plain");
+  }
+
+  private onDropFile(ev: DragEvent): void {
+    const raw =
+      ev.dataTransfer?.getData("text/uri-list") ??
+      ev.dataTransfer?.getData("text/plain") ??
+      "";
+    if (!raw) return;
+    const path = this.parseDroppedPath(raw);
+    if (!path) {
+      new Notice("Obsidian Copilot：无法识别拖入的文件");
+      return;
+    }
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      this.composer.insertMentionChip(file.basename, file.path);
+      new Notice(`已添加引用：${file.basename}`);
+    } else if (file instanceof TFolder) {
+      this.composer.insertMentionChip(file.name, `${file.path}/`);
+      new Notice(`已添加文件夹引用：${file.name}/`);
+    } else {
+      new Notice(`Obsidian Copilot：找不到 ${path}`);
+    }
+  }
+
+  /** 解析 Obsidian 文件拖拽的 dataTransfer 内容。 */
+  private parseDroppedPath(raw: string): string | null {
+    const uri = raw.split("\n").map((line) => line.trim()).find((line) => line !== "") ?? "";
+    try {
+      // obsidian://open?vault=...&file=路径
+      if (uri.startsWith("obsidian://")) {
+        const url = new URL(uri);
+        const file = url.searchParams.get("file");
+        if (file) return decodeURIComponent(file);
+      }
+      // app://obsidian.md/<vault>/<路径>
+      if (uri.startsWith("app://")) {
+        const rest = decodeURIComponent(uri.slice("app://".length));
+        const parts = rest.replace(/^\//, "").split("/");
+        const vaultName = this.app.vault.getName();
+        if (parts[0] === vaultName) parts.shift();
+        return parts.join("/") || null;
+      }
+    } catch {
+      /* fallthrough */
+    }
+    // 纯路径兜底
+    const candidate = uri.replace(/^file:\/\//, "");
+    if (candidate && !candidate.includes("://") && this.app.vault.getAbstractFileByPath(candidate)) {
+      return candidate;
+    }
+    return null;
   }
 
   // -------------------------------------------------------------------------

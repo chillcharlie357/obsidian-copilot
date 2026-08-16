@@ -3,7 +3,7 @@
  * 通过 ACP（Agent Client Protocol）连接 agent：
  * 内置 DSH 预设（dsh-acp-adapter → DeepSeek Harness），也支持任意 ACP agent profile。
  */
-import { Component, FileSystemAdapter, Plugin } from "obsidian";
+import { Component, FileSystemAdapter, Plugin, TFile } from "obsidian";
 import { AcpService } from "./service/acp-service.js";
 import { ThreadStore } from "./service/threads.js";
 import { ChatView, VIEW_TYPE } from "./ui/chat-view.js";
@@ -49,6 +49,27 @@ export default class DshCopilotPlugin extends Plugin {
     this.settingTab = new DshCopilotSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
 
+    // 编辑器划词 → 右键菜单「添加到 Copilot」
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor, view) => {
+        const selection = editor.getSelection().trim();
+        if (!selection) return;
+        menu.addItem((item) => {
+          item
+            .setTitle("添加到 Copilot")
+            .setIcon("bot")
+            .onClick(async () => {
+              await this.activateView();
+              const from = editor.getCursor("from");
+              const to = editor.getCursor("to");
+              const chatView = this.getChatView();
+              const file = view.file instanceof TFile ? view.file : null;
+              chatView?.insertSelectionContext(file, selection, from.line + 1, to.line + 1);
+            });
+        });
+      })
+    );
+
     // 若启动即空闲则自动打开侧边栏
     this.app.workspace.onLayoutReady(() => {
       void this.activateView();
@@ -62,6 +83,13 @@ export default class DshCopilotPlugin extends Plugin {
 
   renderingComponent(): Component {
     return this.mdComponent ?? new Component();
+  }
+
+  /** 取当前（或新建的）聊天视图实例。 */
+  getChatView(): ChatView | null {
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+    const view = leaf?.view;
+    return view instanceof ChatView ? view : null;
   }
 
   async activateView(): Promise<void> {

@@ -14,6 +14,7 @@
 - **Slash 命令**：
   - **agent 命令**：DSH 内置命令（`/plan` `/goal` `/compact` `/feedback`）通过 ACP `available_commands_update` 广告，原样随 prompt 发送；
   - **自定义命令**：vault 根目录 `.obsidian-copilot/commands/*.md`，文件名即命令名（如 `/review`），frontmatter `description` 为说明，正文为 prompt 模板，`$ARGUMENTS` 替换用户输入（客户端展开后发送）。
+- **划词与拖拽入对话**：编辑器里划选文本 → 右键「添加到 Copilot」（插入引用块 + 源文件 chip + 行号）；文件树里把文件/文件夹直接拖进侧边栏即添加引用 chip。
 - **直接修改 vault**：会话工作目录即 vault 根目录，DSH agent 通过自身工具直接读写笔记；vault 变更会以「✏️ 修改了 xx.md」提示出现在对话中（点击跳转）。
 - **工具与审批**：工具调用以卡片展示（参数/结果），DSH 侧需要审批的操作会弹出权限确认框（`session/request_permission`），agent 提问暂以可见提示 + 自动取消处理。
 - **会话持久化**：会话映射保存在插件 data.json；重开 Obsidian 后自动 `session/load` 重放历史，DSH 端会话由其自身持久化。
