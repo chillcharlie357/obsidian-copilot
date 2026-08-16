@@ -118,6 +118,9 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("create", (file) => this.onVaultChange(file)));
     this.registerEvent(this.app.vault.on("delete", (file) => this.onVaultChange(file, true)));
 
+    // 预加载自定义命令，让 / 选择器首次打开就有内容
+    void this.loadCustomCommands();
+
     try {
       await this.activateThread(this.threads.activeThreadId ?? this.threads.list()[0]?.id ?? null);
     } catch (error) {
@@ -191,6 +194,32 @@ export class ChatView extends ItemView {
     this.renderThreadList();
     this.composer.setBusy(false);
     this.composer.focus();
+    // 立即建会话：让 agent 命令（/plan /goal …）马上出现在选择器里
+    void this.ensureSessionFor(record.id, true);
+  }
+
+  /**
+   * 确保 thread 有对应会话（惰性创建；已存在则绑定映射）。
+   * 返回最新记录；失败时 quiet=false 会弹提示。
+   */
+  private async ensureSessionFor(threadId: string, quiet = false): Promise<boolean> {
+    const record = this.threads.get(threadId);
+    if (!record) return false;
+    if (record.sessionId) {
+      this.service.bindSession(threadId, record.sessionId);
+      return true;
+    }
+    try {
+      const sessionId = await this.service.newSession();
+      await this.threads.setSessionId(threadId, sessionId);
+      this.service.bindSession(threadId, sessionId);
+      return true;
+    } catch (error) {
+      if (!quiet) {
+        new Notice(`Obsidian Copilot：创建会话失败（${error instanceof Error ? error.message : String(error)}）`);
+      }
+      return false;
+    }
   }
 
   private async activateThread(threadId: string | null): Promise<void> {
@@ -206,6 +235,9 @@ export class ChatView extends ItemView {
     }
     this.threadTitleEl.setText(record.title);
     this.composer.setBusy(this.service.threadState(threadId).busy);
+
+    // 绑定会话映射：agent 命令广告（available_commands_update）依赖它
+    if (record.sessionId) this.service.bindSession(threadId, record.sessionId);
 
     const state = this.service.threadState(threadId);
     if (state.blocks.blocks.length > 0 || !record.sessionId) {
@@ -280,17 +312,8 @@ export class ChatView extends ItemView {
       this.renderThreadList();
     }
 
-    // 惰性建会话
-    if (!record.sessionId) {
-      try {
-        const sessionId = await this.service.newSession();
-        await this.threads.setSessionId(threadId, sessionId);
-        this.service.bindSession(threadId, sessionId);
-      } catch (error) {
-        new Notice(`Obsidian Copilot：创建会话失败（${error instanceof Error ? error.message : String(error)}）`);
-        return;
-      }
-    }
+    // 惰性建会话（正常情况下 newThread 已提前创建）
+    if (!(await this.ensureSessionFor(threadId))) return;
 
     // 自定义命令展开：模板在客户端执行，agent 命令原样发送（如 /plan）
     const { promptText, displayText } = await this.preparePrompt(rawText);

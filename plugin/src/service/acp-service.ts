@@ -363,13 +363,18 @@ export class AcpService {
       if (method === "session/update") {
         const notification = params as SessionNotification;
         const threadId = this.threadIdForSession(notification.sessionId);
-        if (!threadId) return;
-        const state = this.threadState(threadId);
         if (notification.update.sessionUpdate === "available_commands_update") {
-          state.commands = notification.update.availableCommands;
+          if (!threadId) {
+            // 会话刚创建、映射尚未建立：先缓存，bindSession 时补发
+            this.pendingCommands.set(notification.sessionId, notification.update.availableCommands);
+            return;
+          }
+          this.threadState(threadId).commands = notification.update.availableCommands;
           this.emit("update", { threadId, sessionId: notification.sessionId });
           return;
         }
+        if (!threadId) return;
+        const state = this.threadState(threadId);
         state.blocks = applyUpdate(state.blocks, notification.update, { replaying: state.replaying });
         this.emit("update", { threadId, sessionId: notification.sessionId });
       }
@@ -382,6 +387,8 @@ export class AcpService {
   }
 
   readonly sessionToThread = new Map<string, string>();
+  /** 等待映射的命令广告（session/new 竞态窗口） */
+  private readonly pendingCommands = new Map<string, AvailableCommand[]>();
 
   async handlePermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const tool = request.toolCall;
@@ -449,6 +456,13 @@ export class AcpService {
   /** 便捷：为 thread 注册 session 映射 */
   bindSession(threadId: string, sessionId: string): void {
     this.sessionToThread.set(sessionId, threadId);
+    // 补发绑定前到达的命令广告
+    const pending = this.pendingCommands.get(sessionId);
+    if (pending) {
+      this.pendingCommands.delete(sessionId);
+      this.threadState(threadId).commands = pending;
+      this.emit("update", { threadId, sessionId });
+    }
   }
 
   /** 便捷：本地追加用户消息块 */
