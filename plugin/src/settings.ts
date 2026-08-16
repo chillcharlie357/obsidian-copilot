@@ -232,13 +232,13 @@ export class DshCopilotSettingTab extends PluginSettingTab {
     this.promptChild.load();
     el.empty();
     const text = this.plugin.settings.systemPrompt.trim();
-    void MarkdownRenderer.render(
-      this.app,
-      text === "" ? "*（留空 = 关闭会话前缀注入）*" : text,
-      el,
-      "",
-      this.promptChild
-    );
+    const markdown =
+      text === ""
+        ? "*（留空 = 关闭会话前缀注入）*"
+        : // 提示词里的 [[wiki链接]]、![[嵌入]] 是给 agent 看的语法示例，
+          // 不能被 MarkdownRenderer 解析成 vault 链接（否则会出现“嵌入未创建”）
+          text.replace(/(!?)\[\[([^\]]+)\]\]/g, (_match, bang: string, inner: string) => `\`${bang}[[${inner}]]\``);
+    void MarkdownRenderer.render(this.app, markdown, el, "", this.promptChild);
   }
 }
 
