@@ -22,6 +22,7 @@ import {
 import { Notice, type App } from "obsidian";
 import { applyUpdate, emptyThread, finishStreaming, type ThreadBlocks } from "./model.js";
 import { isPathInside, normalizePathAbs, relativeTo } from "../util.js";
+import { electronNodeFallback, resolveDshBin, resolveNodeBin } from "./bins.js";
 
 export type ServiceStatus = "idle" | "starting" | "ready" | "offline";
 
@@ -38,6 +39,7 @@ export interface AcpSettings {
   dsn: string;
   autoStartDsh: boolean;
   dshBin: string;
+  nodeBin: string;
   killDshOnExit: boolean;
   maxMentionChars: number;
 }
@@ -112,8 +114,20 @@ export class AcpService {
 
   private async startAdapter(): Promise<void> {
     this.setStatus("starting");
+
+    // node 二进制解析：GUI 启动的 Obsidian PATH 里通常没有 Homebrew
+    let command = resolveNodeBin(this.settings.nodeBin);
+    let env = { ...process.env };
+    if (!command) {
+      const fallback = electronNodeFallback();
+      command = fallback.command;
+      env = fallback.env;
+      console.log("[obsidian-copilot] 未找到 node，回退到 ELECTRON_RUN_AS_NODE");
+    }
+    const dshBin = resolveDshBin(this.settings.dshBin) ?? this.settings.dshBin ?? "dsh";
+
     const child = spawn(
-      "node",
+      command,
       [
         this.adapterPath,
         "--dsn",
@@ -121,11 +135,11 @@ export class AcpService {
         "--auto-start-dsh",
         this.settings.autoStartDsh ? "true" : "false",
         "--dsh-bin",
-        this.settings.dshBin || "dsh",
+        dshBin,
         "--kill-dsh-on-exit",
         this.settings.killDshOnExit ? "true" : "false",
       ],
-      { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } }
+      { stdio: ["pipe", "pipe", "pipe"], env }
     );
     this.child = child;
     const stream = new StdioStream(child.stdout, child.stdin);

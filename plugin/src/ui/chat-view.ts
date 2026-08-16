@@ -24,7 +24,7 @@ export const VIEW_TYPE = "obsidian-copilot-view";
 
 export class ChatView extends ItemView {
   private headerStatusEl!: HTMLElement;
-  private titleEl!: HTMLElement;
+  private threadTitleEl!: HTMLElement;
   private threadsPanelEl!: HTMLElement;
   private messagesEl!: HTMLElement;
   private composer!: Composer;
@@ -69,8 +69,8 @@ export class ChatView extends ItemView {
     setIcon(newButton, "plus");
     newButton.addEventListener("click", () => void this.newThread());
 
-    this.titleEl = header.createDiv({ cls: "dsh-title" });
-    this.titleEl.setText("Obsidian Copilot");
+    this.threadTitleEl = header.createDiv({ cls: "dsh-title" });
+    this.threadTitleEl.setText("Obsidian Copilot");
 
     this.headerStatusEl = header.createDiv({ cls: "dsh-status" });
     this.headerStatusEl.setAttr("data-state", "idle");
@@ -105,7 +105,12 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("create", (file) => this.onVaultChange(file)));
     this.registerEvent(this.app.vault.on("delete", (file) => this.onVaultChange(file, true)));
 
-    await this.activateThread(this.threads.activeThreadId ?? this.threads.list()[0]?.id ?? null);
+    try {
+      await this.activateThread(this.threads.activeThreadId ?? this.threads.list()[0]?.id ?? null);
+    } catch (error) {
+      console.error("[obsidian-copilot] 激活会话失败:", error);
+      new Notice(`Obsidian Copilot：会话加载失败（${error instanceof Error ? error.message : String(error)}）`);
+    }
     this.renderThreadList();
   }
 
@@ -167,7 +172,7 @@ export class ChatView extends ItemView {
     const record = await this.threads.create(uuid(), "", "新对话");
     this.activeThreadId = record.id;
     this.service.threadState(record.id);
-    this.titleEl.setText(record.title);
+    this.threadTitleEl.setText(record.title);
     this.scheduleRender();
     this.renderThreadList();
     this.composer.setBusy(false);
@@ -185,7 +190,7 @@ export class ChatView extends ItemView {
       await this.newThread();
       return;
     }
-    this.titleEl.setText(record.title);
+    this.threadTitleEl.setText(record.title);
     this.composer.setBusy(this.service.threadState(threadId).busy);
 
     const state = this.service.threadState(threadId);
@@ -257,7 +262,7 @@ export class ChatView extends ItemView {
     if (!record.sessionId || record.title === "新对话") {
       const title = rawText.replace(/@\[[^\]]+\]\([^)]+\)/g, "").trim().slice(0, 30) || "新对话";
       await this.threads.setTitle(threadId, title);
-      this.titleEl.setText(title);
+      this.threadTitleEl.setText(title);
       this.renderThreadList();
     }
 
@@ -330,8 +335,8 @@ export class ChatView extends ItemView {
     const state = this.service.threadState(threadId);
     renderBlocks(this.plugin, this.messagesEl, state.blocks.blocks, this.messagesEl);
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
-    if (state.busy) this.titleEl.addClass("dsh-busy");
-    else this.titleEl.removeClass("dsh-busy");
+    if (state.busy) this.threadTitleEl.addClass("dsh-busy");
+    else this.threadTitleEl.removeClass("dsh-busy");
   }
 }
 

@@ -6,8 +6,10 @@ export interface DshCopilotSettings {
   dsn: string;
   /** DSH 未运行时自动启动 dsh web */
   autoStartDsh: boolean;
-  /** dsh 可执行文件 */
+  /** dsh 可执行文件（留空自动探测） */
   dshBin: string;
+  /** node 可执行文件（留空自动探测，GUI 启动时 PATH 里通常没有） */
+  nodeBin: string;
   /** 适配器退出时关闭由它启动的 DSH */
   killDshOnExit: boolean;
   /** @引用文件内嵌内容的最大字符数 */
@@ -19,7 +21,8 @@ export interface DshCopilotSettings {
 export const DEFAULT_SETTINGS: DshCopilotSettings = {
   dsn: "http://127.0.0.1:3080",
   autoStartDsh: true,
-  dshBin: "dsh",
+  dshBin: "",
+  nodeBin: "",
   killDshOnExit: true,
   maxMentionChars: 12000,
   showReasoning: true,
@@ -55,12 +58,22 @@ export class DshCopilotSettingTab extends PluginSettingTab {
       })
     );
 
-    new Setting(containerEl).setName("dsh 可执行文件").setDesc("用于自动启动的 dsh 命令路径（默认从 PATH 解析）").addText((text) =>
+    new Setting(containerEl).setName("dsh 可执行文件").setDesc("用于自动启动的 dsh 命令路径；留空自动探测（Homebrew/pnpm 等常见位置）").addText((text) =>
       text
-        .setPlaceholder("dsh")
+        .setPlaceholder("自动探测（如 /opt/homebrew/bin/dsh）")
         .setValue(settings.dshBin)
         .onChange(async (value) => {
-          settings.dshBin = value.trim() || "dsh";
+          settings.dshBin = value.trim();
+          await this.plugin.saveSettings();
+        })
+    );
+
+    new Setting(containerEl).setName("node 可执行文件").setDesc("运行适配器用的 node 路径；留空自动探测，找不到时回退到 Electron Node 模式").addText((text) =>
+      text
+        .setPlaceholder("自动探测（如 /opt/homebrew/bin/node）")
+        .setValue(settings.nodeBin)
+        .onChange(async (value) => {
+          settings.nodeBin = value.trim();
           await this.plugin.saveSettings();
         })
     );
