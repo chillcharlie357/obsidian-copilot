@@ -231,6 +231,7 @@ export class AcpService {
   private setStatus(status: ServiceStatus): void {
     if (this.status === status) return;
     this.status = status;
+    console.log("[obsidian-copilot] agent 状态:", status);
     this.emit("status", status);
   }
 
@@ -246,12 +247,29 @@ export class AcpService {
   }
 
   async newSession(): Promise<string> {
+    // 并发去重：同一线程的 eager 创建与发送路径共享同一个 promise
+    const existing = this.sessionCreations.get(this.vaultRoot);
+    if (existing) return existing;
+    const creation = this.doSessionCreate();
+    this.sessionCreations.set(this.vaultRoot, creation);
+    try {
+      return await creation;
+    } finally {
+      this.sessionCreations.delete(this.vaultRoot);
+    }
+  }
+
+  private async doSessionCreate(): Promise<string> {
     const peer = this.ensurePeer();
+    console.log("[obsidian-copilot] session/new 请求中…");
     const result = (await peer.request("session/new", { cwd: this.vaultRoot, mcpServers: [] }, 60_000)) as {
       sessionId: string;
     };
+    console.log("[obsidian-copilot] session/new 完成", { sessionId: result.sessionId });
     return result.sessionId;
   }
+
+  private readonly sessionCreations = new Map<string, Promise<string>>();
 
   async loadSession(sessionId: string): Promise<void> {
     const peer = this.ensurePeer();
@@ -269,6 +287,7 @@ export class AcpService {
     const peer = this.ensurePeer();
     const state = this.threadState(threadId);
     state.busy = true;
+    console.log("[obsidian-copilot] session/prompt 请求中", { threadId, sessionId, len: rawText.length });
 
     const { prompt } = await this.buildPrompt(rawText);
     if (!state.primed) {
@@ -299,6 +318,7 @@ export class AcpService {
         const blocks = finishStreaming(state.blocks);
         state.blocks = blocks;
         state.busy = false;
+        console.log("[obsidian-copilot] session/prompt 完成", { threadId, stopReason: stop });
         this.emit("prompt-done", { threadId, sessionId, stopReason: stop });
       })
       .catch((error) => {
@@ -307,6 +327,7 @@ export class AcpService {
           blocks: [...state.blocks.blocks, { kind: "error", message: error instanceof Error ? error.message : String(error) }],
           streaming: false,
         };
+        console.error("[obsidian-copilot] session/prompt 失败:", error);
         this.emit("prompt-error", { threadId, sessionId, message: error instanceof Error ? error.message : String(error) });
       });
   }

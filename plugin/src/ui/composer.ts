@@ -157,6 +157,7 @@ export class Composer {
         ev.stopPropagation();
         const item = this.picker.selectCurrent();
         if (item) this.onPickerSelect(item);
+        else this.closePicker(); // 无匹配项时关闭选择器，下一次 Enter 正常发送
         return;
       } else if (ev.key === "Escape") {
         ev.preventDefault();

@@ -396,9 +396,16 @@ export class ChatView extends ItemView {
 
   private async doSend(rawText: string, mentions: Mention[]): Promise<void> {
     const threadId = this.activeThreadId;
-    if (!threadId) return;
+    console.log("[obsidian-copilot] send 开始", { threadId, len: rawText.length });
+    if (!threadId) {
+      console.log("[obsidian-copilot] send 中止：无活动会话");
+      return;
+    }
     const record = this.threads.get(threadId);
-    if (!record) return;
+    if (!record) {
+      console.log("[obsidian-copilot] send 中止：线程记录不存在");
+      return;
+    }
 
     // /remember：本地写入持续记忆
     if (await this.handleRememberCommand(rawText)) return;
@@ -412,11 +419,14 @@ export class ChatView extends ItemView {
     }
 
     // 惰性建会话（正常情况下 newThread 已提前创建）
+    console.log("[obsidian-copilot] send 确保会话", { sessionId: record.sessionId });
     if (!(await this.ensureSessionFor(threadId))) return;
+    console.log("[obsidian-copilot] send 会话就绪", { sessionId: record.sessionId });
 
     // 内置快捷命令 / 自定义命令展开
     const { promptText, displayText } = await this.preparePrompt(rawText);
     if (promptText === "") return;
+    console.log("[obsidian-copilot] send 提交提示", { len: promptText.length });
     await this.service.sendPrompt(threadId, record.sessionId, promptText);
     this.service.appendUserBlock(threadId, displayText, mentions);
     await this.threads.touch(threadId);
