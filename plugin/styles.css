@@ -447,6 +447,47 @@
   border-color: var(--color-accent);
 }
 
+/* contenteditable chip 编辑器形态 */
+.dsh-composer-input[contenteditable="true"] {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  max-height: 220px;
+}
+
+.dsh-composer-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+}
+
+/* 输入框中的引用/命令 chip */
+.dsh-chip {
+  display: inline-block;
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  border-radius: 999px;
+  padding: 1px 9px;
+  margin: 0 2px;
+  font-size: 0.9em;
+  line-height: 1.5;
+  vertical-align: baseline;
+  user-select: all;
+  cursor: default;
+}
+
+.dsh-chip-folder {
+  background: var(--color-purple);
+}
+
+/* 已发送消息里的行内 @ 引用高亮 */
+.dsh-chip-inline {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin: 0 2px;
+  font-weight: 600;
+}
+
 .dsh-composer-bar {
   display: flex;
   align-items: center;

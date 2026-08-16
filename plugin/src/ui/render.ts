@@ -47,7 +47,17 @@ function renderBlock(plugin: DshCopilotPlugin, container: HTMLElement, block: Ui
     case "user": {
       const wrap = container.createDiv({ cls: "dsh-msg dsh-user" });
       const bubble = wrap.createDiv({ cls: "dsh-bubble" });
-      bubble.createEl("div", { cls: "dsh-user-text", text: block.text });
+      const textEl = bubble.createDiv({ cls: "dsh-user-text" });
+      // 把 @name 引用渲染成行内高亮（不显示原始 token）
+      let html = escapeHtml(block.text);
+      for (const ref of block.refs) {
+        const escaped = ref.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        html = html.replace(
+          new RegExp(`@${escaped}(?![\\w-])`, "g"),
+          `<span class="dsh-chip-inline">@${escapeHtml(ref.name)}${ref.path.endsWith("/") ? "/" : ""}</span>`
+        );
+      }
+      textEl.innerHTML = html;
       if (block.refs.length > 0) {
         const refs = wrap.createDiv({ cls: "dsh-refs" });
         for (const ref of block.refs) {
