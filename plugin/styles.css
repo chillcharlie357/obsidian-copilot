@@ -332,6 +332,93 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
+}
+
+/* ---------- 行内选择器（Codex 风格 @ 引用 / slash 命令） ---------- */
+.dsh-picker {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 0;
+  right: 0;
+  margin: 0 6px;
+  z-index: 30;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.dsh-picker-header {
+  padding: 6px 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--background-modifier-border);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dsh-picker-list {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.dsh-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+}
+
+.dsh-picker-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dsh-picker-selected {
+  background: var(--background-modifier-hover);
+  outline: 1px solid var(--color-accent);
+}
+
+.dsh-picker-icon {
+  color: var(--text-muted);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.dsh-picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dsh-picker-label {
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-picker-hint {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-picker-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
 }
 
 .dsh-composer-box {

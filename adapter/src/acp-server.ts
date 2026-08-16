@@ -45,6 +45,19 @@ export interface AdapterConfig {
   debug?: boolean;
 }
 
+/** DSH 内置 slash 命令目录（agent 定义，随会话广告给客户端） */
+const DSH_COMMANDS: SessionUpdate[] = [
+  {
+    sessionUpdate: "available_commands_update",
+    availableCommands: [
+      { name: "plan", description: "生成实施计划并进入计划模式（需批准）", input: { hint: "要规划的任务描述" } },
+      { name: "goal", description: "创建长期目标，agent 自动多轮执行直到完成", input: { hint: "目标描述" } },
+      { name: "compact", description: "压缩当前会话上下文，释放上下文窗口", input: { hint: "" } },
+      { name: "feedback", description: "记录对会话结果的反馈", input: { hint: "反馈内容" } },
+    ],
+  },
+];
+
 interface PendingPrompt {
   rpcId: string;
   resolve: (response: PromptResponse) => void;
@@ -198,10 +211,13 @@ export class AcpServer {
     } catch (error) {
       throw this.toRpc(error, "创建会话失败");
     }
-    if (!this.sessions.has(sessionId)) {
-      this.sessions.set(sessionId, this.newCtx(sessionId, req.cwd));
+    let ctx = this.sessions.get(sessionId);
+    if (!ctx) {
+      ctx = this.newCtx(sessionId, req.cwd);
+      this.sessions.set(sessionId, ctx);
     }
     this.config.log(`[acp] session/new → ${sessionId}`);
+    this.advertiseCommands(ctx);
     return { sessionId };
   }
 
@@ -625,6 +641,7 @@ export class AcpServer {
       }
     }
     this.config.log(`[acp] session/load → ${ctx.sessionId} 重放完成（${pages.flat().length} 事件）`);
+    this.advertiseCommands(ctx);
   }
 
   // -------------------------------------------------------------------------
@@ -683,6 +700,13 @@ export class AcpServer {
   private notifyUpdate(sessionId: string, update: SessionUpdate): void {
     const notification: SessionNotification = { sessionId, update };
     this.peer.notify("session/update", notification);
+  }
+
+  /** 广告 DSH 内置 slash 命令目录。 */
+  private advertiseCommands(ctx: SessionCtx): void {
+    for (const update of DSH_COMMANDS) {
+      this.notifyUpdate(ctx.sessionId, update);
+    }
   }
 
   private toRpc(error: unknown, fallback: string): RpcError {

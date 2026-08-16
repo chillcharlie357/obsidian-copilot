@@ -1,9 +1,8 @@
 /**
- * 侧边栏聊天视图：会话列表 + 消息流 + 输入框。
+ * 侧边栏聊天视图：会话列表 + 消息流 + 输入框（行内 @ / 命令选择器）。
  */
 import {
   App,
-  FuzzySuggestModal,
   ItemView,
   Modal,
   Notice,
@@ -16,7 +15,15 @@ import type { PermissionOption } from "@dsh-obsidian/acp-core";
 import type DshCopilotPlugin from "../main.js";
 import type { PermissionRequestInfo, ServiceStatus } from "../service/acp-service.js";
 import { ThreadStore } from "../service/threads.js";
+import {
+  COMMANDS_DIR,
+  expandTemplate,
+  listCustomCommands,
+  parseCommandMeta,
+  type CustomCommand,
+} from "../service/commands.js";
 import { Composer, type Mention } from "./composer.js";
+import type { PickerItem } from "./picker.js";
 import { renderBlocks } from "./render.js";
 import { uuid } from "../util.js";
 
@@ -30,6 +37,8 @@ export class ChatView extends ItemView {
   private composer!: Composer;
   private activeThreadId: string | null = null;
   private renderScheduled = false;
+  private customCommands: CustomCommand[] = [];
+  private customCommandsLoadedAt = 0;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -94,7 +103,11 @@ export class ChatView extends ItemView {
     this.composer = new Composer(composerWrap, this.plugin, {
       onSubmit: (text, mentions) => void this.send(text, mentions),
       onStop: () => this.cancel(),
-      onMention: () => this.openMentionPicker(),
+      onCommandSelected: () => undefined,
+      providers: {
+        files: () => this.filePickerItems(),
+        commands: () => this.commandPickerItems(),
+      },
     });
 
     // ---------- 事件 ----------
@@ -153,6 +166,7 @@ export class ChatView extends ItemView {
   // -------------------------------------------------------------------------
 
   private onVaultChange(file: TAbstractFile, deleted = false): void {
+    this.invalidateCustomCommands(file);
     if (!this.activeThreadId) return;
     const state = this.service.threadState(this.activeThreadId);
     if (!state.busy) return;
@@ -278,11 +292,35 @@ export class ChatView extends ItemView {
       }
     }
 
-    const displayText = await this.service.sendPrompt(threadId, record.sessionId, rawText);
+    // 自定义命令展开：模板在客户端执行，agent 命令原样发送（如 /plan）
+    const { promptText, displayText } = await this.preparePrompt(rawText);
+    await this.service.sendPrompt(threadId, record.sessionId, promptText);
     this.service.appendUserBlock(threadId, displayText, mentions);
     await this.threads.touch(threadId);
     this.composer.setBusy(true);
     this.scheduleRender();
+  }
+
+  /**
+   * 发送前处理：
+   * - 自定义命令（.obsidian-copilot/commands/*.md）：展开模板（$ARGUMENTS）
+   * - 展示文本：@[名](路径) → @名（命令保持原样展示）
+   */
+  private async preparePrompt(rawText: string): Promise<{ promptText: string; displayText: string }> {
+    const displayText = rawText.replace(/@\[([^\]]+)\]\(([^)]+)\)/g, (_all, name: string) => `@${name}`);
+    const match = /^\s*\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(rawText.trim());
+    if (!match) return { promptText: rawText, displayText };
+    const name = match[1] ?? "";
+    const command = (await this.loadCustomCommands()).find((c) => c.name === name);
+    if (!command) return { promptText: rawText, displayText };
+    try {
+      const content = await this.app.vault.adapter.read(command.path);
+      const { body } = parseCommandMeta(content);
+      const args = (match[2] ?? "").trim();
+      return { promptText: expandTemplate(body, args), displayText };
+    } catch {
+      return { promptText: rawText, displayText };
+    }
   }
 
   private cancel(): void {
@@ -294,16 +332,55 @@ export class ChatView extends ItemView {
   }
 
   // -------------------------------------------------------------------------
-  // @ 引用
+  // 行内选择器数据源（@ 文件 / slash 命令）
   // -------------------------------------------------------------------------
 
-  openMentionPicker(): void {
-    const files = this.app.vault.getMarkdownFiles();
-    const picker = new MentionPickerModal(this.app, files);
-    picker.onChoose = (file) => {
-      this.composer.insertMention(file.basename, file.path);
-    };
-    picker.open();
+  private filePickerItems(): PickerItem[] {
+    return this.app.vault
+      .getMarkdownFiles()
+      .map((file) => ({
+        key: `file:${file.path}`,
+        label: file.basename,
+        hint: file.path,
+        icon: "file-text",
+        meta: { name: file.basename, path: file.path },
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  private commandPickerItems(): PickerItem[] {
+    const threadId = this.activeThreadId ?? "";
+    const agent: PickerItem[] = this.service.threadState(threadId).commands.map((command) => ({
+      key: `agent:${command.name}`,
+      label: `/${command.name}`,
+      hint: command.input?.hint ? `${command.description} · ${command.input.hint}` : command.description,
+      icon: "bot",
+      meta: { name: command.name, hint: command.input?.hint },
+    }));
+    const custom: PickerItem[] = this.customCommands.map((command) => ({
+      key: `custom:${command.name}`,
+      label: `/${command.name}`,
+      hint: command.description || "自定义命令",
+      icon: "terminal",
+      meta: { name: command.name },
+    }));
+    return [...agent, ...custom];
+  }
+
+  /** 加载 vault 自定义命令（5 秒缓存）。 */
+  private async loadCustomCommands(): Promise<CustomCommand[]> {
+    if (Date.now() - this.customCommandsLoadedAt > 5000) {
+      this.customCommands = await listCustomCommands(this.app.vault);
+      this.customCommandsLoadedAt = Date.now();
+    }
+    return this.customCommands;
+  }
+
+  /** vault 内自定义命令目录发生变化时使缓存失效。 */
+  private invalidateCustomCommands(file: TAbstractFile): void {
+    if (file.path.startsWith(`${COMMANDS_DIR}/`)) {
+      this.customCommandsLoadedAt = 0;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -337,27 +414,6 @@ export class ChatView extends ItemView {
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
     if (state.busy) this.threadTitleEl.addClass("dsh-busy");
     else this.threadTitleEl.removeClass("dsh-busy");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// @ 文件选择器
-// ---------------------------------------------------------------------------
-
-class MentionPickerModal extends FuzzySuggestModal<TFile> {
-  onChoose: (file: TFile) => void = () => undefined;
-  constructor(app: App, private readonly files: TFile[]) {
-    super(app);
-    this.setPlaceholder("搜索要引用的笔记…");
-  }
-  getItems(): TFile[] {
-    return this.files;
-  }
-  getItemText(file: TFile): string {
-    return file.path;
-  }
-  onChooseItem(file: TFile): void {
-    this.onChoose(file);
   }
 }
 

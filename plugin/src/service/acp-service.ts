@@ -10,6 +10,7 @@ import {
   ERR_METHOD_NOT_FOUND,
   ACP_PROTOCOL_VERSION,
   type AgentCapabilities,
+  type AvailableCommand,
   type ContentBlock,
   type PermissionOption,
   type PromptResponse,
@@ -56,7 +57,7 @@ export class AcpService {
   private listeners = new Set<Listener>();
   private permissionQueue: PermissionRequestInfo[] = [];
   /** threadId → 渲染状态 */
-  readonly threadStates = new Map<string, { blocks: ThreadBlocks; busy: boolean; replaying: boolean }>();
+  readonly threadStates = new Map<string, { blocks: ThreadBlocks; busy: boolean; replaying: boolean; commands: AvailableCommand[] }>();
 
   constructor(
     private readonly app: App,
@@ -88,10 +89,10 @@ export class AcpService {
     return this.capabilities;
   }
 
-  threadState(threadId: string): { blocks: ThreadBlocks; busy: boolean; replaying: boolean } {
+  threadState(threadId: string): { blocks: ThreadBlocks; busy: boolean; replaying: boolean; commands: AvailableCommand[] } {
     let state = this.threadStates.get(threadId);
     if (!state) {
-      state = { blocks: emptyThread(), busy: false, replaying: false };
+      state = { blocks: emptyThread(), busy: false, replaying: false, commands: [] };
       this.threadStates.set(threadId, state);
     }
     return state;
@@ -243,15 +244,14 @@ export class AcpService {
   }
 
   /**
-   * 发送提示：解析 @ 引用并构造 ACP prompt 块。
-   * 返回解析出的展示文本（用于本地渲染用户消息）。
+   * 发送提示：解析 @ 引用并构造 ACP prompt 块（展示文本由 UI 层另行渲染）。
    */
-  async sendPrompt(threadId: string, sessionId: string, rawText: string): Promise<string> {
+  async sendPrompt(threadId: string, sessionId: string, rawText: string): Promise<void> {
     const peer = this.ensurePeer();
     const state = this.threadState(threadId);
     state.busy = true;
 
-    const { displayText, prompt } = await this.buildPrompt(rawText);
+    const { prompt } = await this.buildPrompt(rawText);
     const promise = peer.request(
       "session/prompt",
       { sessionId, prompt },
@@ -273,7 +273,6 @@ export class AcpService {
         };
         this.emit("prompt-error", { threadId, sessionId, message: error instanceof Error ? error.message : String(error) });
       });
-    return displayText;
   }
 
   cancel(threadId: string, sessionId: string): void {
@@ -286,7 +285,7 @@ export class AcpService {
   // 提示构造（@ 引用 → embedded resource）
   // -------------------------------------------------------------------------
 
-  private async buildPrompt(rawText: string): Promise<{ displayText: string; prompt: ContentBlock[] }> {
+  private async buildPrompt(rawText: string): Promise<{ prompt: ContentBlock[] }> {
     // @[名称](相对路径)
     const mentionRe = /@\[([^\]]+)\]\(([^)]+)\)/g;
     const mentions: Array<{ name: string; path: string }> = [];
@@ -294,9 +293,9 @@ export class AcpService {
     while ((match = mentionRe.exec(rawText)) !== null) {
       mentions.push({ name: match[1] ?? "", path: match[2] ?? "" });
     }
-    const displayText = rawText.replace(mentionRe, (_all, name) => `@${name}`);
+    const text = rawText.replace(mentionRe, (_all, name) => `@${name}`);
 
-    const prompt: ContentBlock[] = [{ type: "text", text: displayText }];
+    const prompt: ContentBlock[] = [{ type: "text", text }];
     const embedded = this.capabilities?.promptCapabilities?.embeddedContext !== false;
     for (const mention of mentions) {
       const absolute = this.resolveVaultPath(mention.path);
@@ -328,7 +327,7 @@ export class AcpService {
         });
       }
     }
-    return { displayText, prompt };
+    return { prompt };
   }
 
   /** vault 相对路径 → 绝对路径（无 vault 信息时用 vaultRoot 拼接） */
@@ -366,6 +365,11 @@ export class AcpService {
         const threadId = this.threadIdForSession(notification.sessionId);
         if (!threadId) return;
         const state = this.threadState(threadId);
+        if (notification.update.sessionUpdate === "available_commands_update") {
+          state.commands = notification.update.availableCommands;
+          this.emit("update", { threadId, sessionId: notification.sessionId });
+          return;
+        }
         state.blocks = applyUpdate(state.blocks, notification.update, { replaying: state.replaying });
         this.emit("update", { threadId, sessionId: notification.sessionId });
       }

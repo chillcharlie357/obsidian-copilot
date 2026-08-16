@@ -314,7 +314,12 @@ export type SessionUpdate =
 export interface AvailableCommand {
   name: string;
   description: string;
-  input?: unknown | null;
+  input?: AvailableCommandInput | null;
+}
+
+/** 命令的非结构化文本输入提示（v1 仅此形态） */
+export interface AvailableCommandInput {
+  hint: string;
 }
 
 export interface SessionNotification {
