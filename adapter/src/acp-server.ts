@@ -278,7 +278,7 @@ export class AcpServer {
             { sessionId: req.sessionId, mode: "queue", content },
             { rpcId, timeoutMs: 30_000 }
           );
-          // accepted：等待事件流驱动完成
+          this.config.log(`[acp] session/prompt 已提交 ${ctx.sessionId}（等待 ${ctx.pending.length} 个 prompt 结算）`);
         } catch (error) {
           const at = ctx.pending.indexOf(pending);
           if (at >= 0) ctx.pending.splice(at, 1);
@@ -339,7 +339,7 @@ export class AcpServer {
   private onHostFrame(payload: HostFramePayload): void {
     if (payload.type === "host/session-status" && !payload.running) {
       const ctx = this.sessions.get(payload.sessionId);
-      if (ctx && ctx.pending.length > 0) this.settle(ctx);
+      if (ctx && ctx.pending.length > 0) this.settle(ctx, "host-status");
     }
     if (payload.type === "host/agent-error") {
       const ctx = this.sessions.get(payload.sessionId);
@@ -440,7 +440,7 @@ export class AcpServer {
         }
         const running = this.streams.isRunning(ctx.sessionId);
         if (ctx.pending.length > 0) {
-          if (running === false) this.settle(ctx);
+          if (running === false) this.settle(ctx, "turn-end+status");
           else if (!running) this.scheduleSettle(ctx);
         }
         break;
@@ -459,16 +459,17 @@ export class AcpServer {
     ctx.settleTimer = setTimeout(() => {
       ctx.settleTimer = null;
       // goal 模式会在旧 turn 结束后开启新 turn；两秒内没有新 turn 就结算
-      if (!ctx.turnOpen && ctx.pending.length > 0) this.settle(ctx);
+      if (!ctx.turnOpen && ctx.pending.length > 0) this.settle(ctx, "turn-end-fallback");
     }, 2000);
   }
 
-  private settle(ctx: SessionCtx): void {
+  private settle(ctx: SessionCtx, via = "unknown"): void {
     if (ctx.settleTimer) {
       clearTimeout(ctx.settleTimer);
       ctx.settleTimer = null;
     }
     const pendings = ctx.pending.splice(0);
+    this.config.log(`[acp] 结算 ${ctx.sessionId}（via=${via}，${pendings.length} 个 prompt）`);
     for (const pending of pendings) {
       if (pending.errorMessage) {
         pending.reject(new RpcError(ERR_AGENT_UNAVAILABLE, pending.errorMessage));
@@ -537,8 +538,7 @@ export class AcpServer {
           if (ctx.pending.length === 0) continue;
           const row = res.items?.find((item) => item.sessionId === ctx.sessionId);
           if (row && row.running === false) {
-            this.config.log(`[acp] 看门狗结算 ${ctx.sessionId}（running=false）`);
-            this.settle(ctx);
+            this.settle(ctx, "watchdog");
           }
         }
       } catch (error) {
