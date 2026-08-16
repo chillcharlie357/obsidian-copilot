@@ -29,6 +29,9 @@ export interface ComposerOptions {
 
 const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
 
+const IDLE_HINT = "Enter 发送 · Shift+Enter 换行 · @ 引用 · / 命令";
+const BUSY_HINT = "Cmd+Enter 追加消息 · 点击「停止」中断";
+
 export function parseMentions(text: string): Mention[] {
   const mentions: Mention[] = [];
   let match: RegExpExecArray | null;
@@ -78,7 +81,7 @@ export class Composer {
     setIcon(commandButton, "slash");
     commandButton.addEventListener("click", () => this.openTriggerManually("command", "/"));
     this.hintEl = bar.createDiv({ cls: "dsh-composer-hint" });
-    this.hintEl.setText("Enter 发送 · Shift+Enter 换行 · @ 引用 · / 命令");
+    this.hintEl.setText(IDLE_HINT);
     this.sendButton = bar.createEl("button", { cls: "dsh-send-btn mod-cta" });
     this.sendButton.setText("发送");
     this.sendButton.addEventListener("click", () => this.submit());
@@ -162,6 +165,11 @@ export class Composer {
     }
     if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
       ev.preventDefault();
+      if (this.busy) {
+        // 忙时：Cmd/Ctrl+Enter 排队追加消息；普通 Enter 忽略（停止请点按钮，防止误触）
+        if (ev.metaKey || ev.ctrlKey) this.submit(true);
+        return;
+      }
       this.submit();
     }
   }
@@ -169,9 +177,7 @@ export class Composer {
   private closePicker(): void {
     this.picker.close();
     this.active = null;
-    if (!this.busy) {
-      this.hintEl.setText("Enter 发送 · Shift+Enter 换行 · @ 引用 · / 命令");
-    }
+    this.hintEl.setText(this.busy ? BUSY_HINT : IDLE_HINT);
   }
 
   /** 工具栏按钮：在光标处插入触发符并打开选择器。 */
@@ -320,8 +326,8 @@ export class Composer {
     return out.replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  private submit(): void {
-    if (this.busy) {
+  private submit(force = false): void {
+    if (this.busy && !force) {
       this.options.onStop();
       return;
     }
@@ -343,10 +349,12 @@ export class Composer {
       this.sendButton.setText("停止");
       this.sendButton.removeClass("mod-cta");
       this.sendButton.addClass("dsh-stop-btn");
+      this.hintEl.setText(BUSY_HINT);
     } else {
       this.sendButton.setText("发送");
       this.sendButton.addClass("mod-cta");
       this.sendButton.removeClass("dsh-stop-btn");
+      this.hintEl.setText(IDLE_HINT);
     }
   }
 

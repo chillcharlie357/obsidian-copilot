@@ -74,6 +74,7 @@ const BUILTIN_COMMANDS: PickerItem[] = [
 
 export class ChatView extends ItemView {
   private headerStatusEl!: HTMLElement;
+  private headerStopEl!: HTMLElement;
   private threadTitleEl!: HTMLElement;
   private threadsPanelEl!: HTMLElement;
   private messagesEl!: HTMLElement;
@@ -127,6 +128,15 @@ export class ChatView extends ItemView {
 
     this.headerStatusEl = header.createDiv({ cls: "dsh-status" });
     this.headerStatusEl.setAttr("data-state", "idle");
+
+    // 备用停止按钮：忙时显示在头部，避免与底边栏/输入区冲突
+    this.headerStopEl = header.createEl("button", {
+      cls: "dsh-icon-btn dsh-header-stop",
+      attr: { "aria-label": "停止生成" },
+    });
+    setIcon(this.headerStopEl, "octagon-x");
+    this.headerStopEl.hide();
+    this.headerStopEl.addEventListener("click", () => this.cancel());
 
     const listButton = header.createEl("button", { cls: "dsh-icon-btn", attr: { "aria-label": "会话列表" } });
     setIcon(listButton, "history");
@@ -739,8 +749,13 @@ export class ChatView extends ItemView {
       onFeedback: (block, direction) => void this.handleFeedback(block, direction),
     });
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
-    if (state.busy) this.threadTitleEl.addClass("dsh-busy");
-    else this.threadTitleEl.removeClass("dsh-busy");
+    if (state.busy) {
+      this.threadTitleEl.addClass("dsh-busy");
+      this.headerStopEl.show();
+    } else {
+      this.threadTitleEl.removeClass("dsh-busy");
+      this.headerStopEl.hide();
+    }
   }
 
   // -------------------------------------------------------------------------

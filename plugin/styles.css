@@ -5,6 +5,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 /* ---------- 头部 ---------- */
@@ -15,6 +16,16 @@
   padding: 8px 10px;
   border-bottom: 1px solid var(--background-modifier-border);
   flex-shrink: 0;
+  z-index: 40;
+}
+
+.dsh-header-stop {
+  color: var(--text-error);
+}
+
+.dsh-header-stop:hover {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
 }
 
 .dsh-title {
@@ -328,11 +339,13 @@
 .dsh-composer {
   flex-shrink: 0;
   border-top: 1px solid var(--background-modifier-border);
-  padding: 8px 10px;
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   position: relative;
+  z-index: 20;
+  background: var(--background-primary);
 }
 
 /* ---------- 行内选择器（Codex 风格 @ 引用 / slash 命令） ---------- */
