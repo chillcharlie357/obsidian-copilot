@@ -32,17 +32,27 @@ const TOOL_KIND_LABEL: Record<string, string> = {
   other: "工具",
 };
 
+export interface RenderCallbacks {
+  onFeedback?: (block: UiBlock, direction: "up" | "down") => void;
+}
+
 export function renderBlocks(
   plugin: DshCopilotPlugin,
   container: HTMLElement,
   blocks: UiBlock[],
-  _scrollEl: HTMLElement
+  _scrollEl: HTMLElement,
+  callbacks?: RenderCallbacks
 ): void {
   container.empty();
-  for (const block of blocks) renderBlock(plugin, container, block);
+  for (const block of blocks) renderBlock(plugin, container, block, callbacks);
 }
 
-function renderBlock(plugin: DshCopilotPlugin, container: HTMLElement, block: UiBlock): void {
+function renderBlock(
+  plugin: DshCopilotPlugin,
+  container: HTMLElement,
+  block: UiBlock,
+  callbacks?: RenderCallbacks
+): void {
   switch (block.kind) {
     case "user": {
       const wrap = container.createDiv({ cls: "dsh-msg dsh-user" });
@@ -80,6 +90,21 @@ function renderBlock(plugin: DshCopilotPlugin, container: HTMLElement, block: Ui
         "",
         plugin.renderingComponent()
       );
+      if (block.done && block.text.trim() !== "") {
+        const actions = wrap.createDiv({ cls: "dsh-msg-actions" });
+        const up = actions.createEl("button", {
+          cls: `dsh-feedback-btn${block.feedback === "up" ? " is-active" : ""}`,
+          attr: { "aria-label": "有帮助" },
+        });
+        setIcon(up, "thumbs-up");
+        up.addEventListener("click", () => callbacks?.onFeedback?.(block, "up"));
+        const down = actions.createEl("button", {
+          cls: `dsh-feedback-btn${block.feedback === "down" ? " is-active" : ""}`,
+          attr: { "aria-label": "不满意" },
+        });
+        setIcon(down, "thumbs-down");
+        down.addEventListener("click", () => callbacks?.onFeedback?.(block, "down"));
+      }
       break;
     }
     case "thought": {
@@ -115,6 +140,12 @@ function renderBlock(plugin: DshCopilotPlugin, container: HTMLElement, block: Ui
           await plugin.app.workspace.getLeaf(false).openFile(file);
         }
       });
+      break;
+    }
+    case "notice": {
+      const row = container.createDiv({ cls: "dsh-notice" });
+      setIcon(row.createSpan(), "info");
+      row.createSpan({ text: ` ${block.text}` });
       break;
     }
     case "error": {

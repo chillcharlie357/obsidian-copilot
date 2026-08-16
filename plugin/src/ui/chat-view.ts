@@ -4,6 +4,7 @@
 import {
   App,
   ItemView,
+  MarkdownView,
   Modal,
   Notice,
   TAbstractFile,
@@ -23,12 +24,53 @@ import {
   parseCommandMeta,
   type CustomCommand,
 } from "../service/commands.js";
-import { Composer, type Mention } from "./composer.js";
+import { appendMemory, MEMORY_FILE, readMemory } from "../service/memory.js";
+import { Composer, parseMentions as parseMentionsCompat, type Mention } from "./composer.js";
 import type { PickerItem } from "./picker.js";
 import { renderBlocks } from "./render.js";
+import type { UiBlock } from "../service/model.js";
 import { uuid } from "../util.js";
 
 export const VIEW_TYPE = "obsidian-copilot-view";
+
+/** 内置快捷命令（动态展开，依赖当前笔记/划选内容） */
+const BUILTIN_COMMANDS: PickerItem[] = [
+  {
+    key: "builtin:summarize-note",
+    label: "/总结当前笔记",
+    hint: "总结当前打开笔记的核心内容与要点",
+    icon: "sparkles",
+    meta: { name: "总结当前笔记" },
+  },
+  {
+    key: "builtin:actions",
+    label: "/生成行动项",
+    hint: "从当前笔记提取行动项，按优先级列出",
+    icon: "list-checks",
+    meta: { name: "生成行动项" },
+  },
+  {
+    key: "builtin:summarize-selection",
+    label: "/总结所选",
+    hint: "总结编辑器里划选的文本",
+    icon: "highlighter",
+    meta: { name: "总结所选" },
+  },
+  {
+    key: "builtin:refine-selection",
+    label: "/精简所选",
+    hint: "精简划选文本，输出可直接替换的版本",
+    icon: "wand-sparkles",
+    meta: { name: "精简所选" },
+  },
+  {
+    key: "builtin:remember",
+    label: "/remember",
+    hint: "把偏好/事实写入持续记忆（memory.md）",
+    icon: "brain",
+    meta: { name: "remember" },
+  },
+];
 
 export class ChatView extends ItemView {
   private headerStatusEl!: HTMLElement;
@@ -40,6 +82,7 @@ export class ChatView extends ItemView {
   private renderScheduled = false;
   private customCommands: CustomCommand[] = [];
   private customCommandsLoadedAt = 0;
+  private contextBarEl!: HTMLElement;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -99,6 +142,10 @@ export class ChatView extends ItemView {
     // ---------- 消息区 ----------
     this.messagesEl = root.createDiv({ cls: "dsh-messages" });
 
+    // ---------- 当前上下文 pill（跟随活动笔记） ----------
+    this.contextBarEl = root.createDiv({ cls: "dsh-context-bar" });
+    this.updateContextBar();
+
     // ---------- 输入区 ----------
     const composerWrap = root.createDiv({ cls: "dsh-composer" });
     this.composer = new Composer(composerWrap, this.plugin, {
@@ -113,6 +160,8 @@ export class ChatView extends ItemView {
 
     // ---------- 事件 ----------
     this.register(this.service.on((event, payload) => this.onServiceEvent(event, payload)));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.updateContextBar()));
+    this.registerEvent(this.app.workspace.on("file-open", () => this.updateContextBar()));
 
     // ---------- 文件拖拽：从文件树拖入即插入引用 chip ----------
     this.registerDomEvent(this.contentEl, "dragover", (ev: DragEvent) => {
@@ -323,6 +372,9 @@ export class ChatView extends ItemView {
     const record = this.threads.get(threadId);
     if (!record) return;
 
+    // /remember：本地写入持续记忆
+    if (await this.handleRememberCommand(rawText)) return;
+
     // 标题：首条消息前 30 字
     if (!record.sessionId || record.title === "新对话") {
       const title = rawText.replace(/@\[[^\]]+\]\([^)]+\)/g, "").trim().slice(0, 30) || "新对话";
@@ -334,8 +386,9 @@ export class ChatView extends ItemView {
     // 惰性建会话（正常情况下 newThread 已提前创建）
     if (!(await this.ensureSessionFor(threadId))) return;
 
-    // 自定义命令展开：模板在客户端执行，agent 命令原样发送（如 /plan）
+    // 内置快捷命令 / 自定义命令展开
     const { promptText, displayText } = await this.preparePrompt(rawText);
+    if (promptText === "") return;
     await this.service.sendPrompt(threadId, record.sessionId, promptText);
     this.service.appendUserBlock(threadId, displayText, mentions);
     await this.threads.touch(threadId);
@@ -345,6 +398,7 @@ export class ChatView extends ItemView {
 
   /**
    * 发送前处理：
+   * - 内置快捷命令（依赖当前笔记/划选内容）动态展开
    * - 自定义命令（.obsidian-copilot/commands/*.md）：展开模板（$ARGUMENTS）
    * - 展示文本：@[名](路径) → @名（命令保持原样展示）
    */
@@ -353,16 +407,103 @@ export class ChatView extends ItemView {
     const match = /^\s*\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(rawText.trim());
     if (!match) return { promptText: rawText, displayText };
     const name = match[1] ?? "";
+    const args = (match[2] ?? "").trim();
+
+    // 内置快捷命令
+    const builtin = this.buildBuiltinCommand(name, args);
+    if (builtin) {
+      return { promptText: builtin, displayText };
+    }
+    // 自定义命令
     const command = (await this.loadCustomCommands()).find((c) => c.name === name);
     if (!command) return { promptText: rawText, displayText };
     try {
       const content = await this.app.vault.adapter.read(command.path);
       const { body } = parseCommandMeta(content);
-      const args = (match[2] ?? "").trim();
       return { promptText: expandTemplate(body, args), displayText };
     } catch {
       return { promptText: rawText, displayText };
     }
+  }
+
+  /** 内置快捷命令展开；不匹配返回 null。 */
+  private buildBuiltinCommand(name: string, args: string): string | null {
+    const file = this.app.workspace.getActiveFile();
+    const mention = file ? `@[${file.basename}](${file.path})` : "";
+    const tail = args !== "" ? `\n\n补充要求：${args}` : "";
+    switch (name) {
+      case "总结当前笔记":
+        if (!file) {
+          new Notice("Obsidian Copilot：当前没有打开的笔记");
+          return "";
+        }
+        return `请总结这篇笔记的核心内容与要点，输出结构化摘要（核心论点 / 关键细节 / 待办事项）。\n\n${mention}${tail}`;
+      case "生成行动项":
+        if (!file) {
+          new Notice("Obsidian Copilot：当前没有打开的笔记");
+          return "";
+        }
+        return `阅读这篇笔记，提取其中的行动项与待办，按优先级列出，每条附原文依据。\n\n${mention}${tail}`;
+      case "总结所选":
+      case "精简所选": {
+        const selection = this.getActiveSelection();
+        if (!selection || selection.text.trim() === "") {
+          new Notice("Obsidian Copilot：当前编辑器没有划选内容");
+          return "";
+        }
+        const quote = selection.text
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n");
+        const source = selection.file
+          ? `（选段来源：@[${selection.file.basename}](${selection.file.path}) 第 ${selection.fromLine}–${selection.toLine} 行）`
+          : `（选段来源：第 ${selection.fromLine}–${selection.toLine} 行）`;
+        const instruction =
+          name === "总结所选"
+            ? "针对以下划选内容，给出简明总结（3–5 条要点）。"
+            : "请精简以下划选内容，保持原意与语气，输出可直接替换的版本。";
+        return `${instruction}\n\n${quote}\n\n${source}${tail}`;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /** 当前编辑器划选内容（含来源文件与行号）。 */
+  private getActiveSelection(): { text: string; file: TFile | null; fromLine: number; toLine: number } | null {
+    const leaf = this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf;
+    if (!leaf) return null;
+    const view = leaf.view;
+    if (!(view instanceof MarkdownView)) return null;
+    const editor = view.editor;
+    const text = editor.getSelection().trim();
+    const from = editor.getCursor("from");
+    const to = editor.getCursor("to");
+    return { text, file: view.file, fromLine: from.line + 1, toLine: to.line + 1 };
+  }
+
+  /** /remember：本地写入持续记忆，不发送给 agent。返回 true 表示已处理。 */
+  private async handleRememberCommand(rawText: string): Promise<boolean> {
+    const match = /^\s*\/remember(?:\s+([\s\S]+))?$/.exec(rawText.trim());
+    if (!match) return false;
+    const content = (match[1] ?? "").trim();
+    if (!content) {
+      new Notice("Obsidian Copilot：用法 /remember 要记住的内容");
+      return true;
+    }
+    const threadId = this.activeThreadId;
+    const displayText = rawText.replace(/@\[([^\]]+)\]\(([^)]+)\)/g, (_all, name: string) => `@${name}`);
+    if (threadId) {
+      this.service.appendUserBlock(threadId, displayText, parseMentionsCompat(rawText));
+      this.service.threadState(threadId).blocks.blocks.push({
+        kind: "notice",
+        text: `已写入持续记忆（${MEMORY_FILE}）`,
+      });
+    }
+    const stamp = new Date().toISOString().slice(0, 10);
+    await appendMemory(this.app.vault, `- [${stamp}] ${content}`);
+    this.scheduleRender();
+    return true;
   }
 
   private cancel(): void {
@@ -444,13 +585,65 @@ export class ChatView extends ItemView {
   }
 
   // -------------------------------------------------------------------------
+  // 当前笔记上下文 pill
+  // -------------------------------------------------------------------------
+
+  private updateContextBar(): void {
+    if (!this.contextBarEl) return;
+    this.contextBarEl.empty();
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      this.contextBarEl.hide();
+      return;
+    }
+    this.contextBarEl.show();
+    const pill = this.contextBarEl.createEl("button", { cls: "dsh-context-pill" });
+    setIcon(pill.createSpan(), "book-open");
+    pill.createSpan({ text: ` ${file.basename}` });
+    pill.setAttr("aria-label", `把 ${file.path} 加入对话上下文`);
+    pill.addEventListener("click", () => {
+      if (this.composer.containsMention(file.path)) {
+        new Notice(`已在上下文中：${file.basename}`);
+        return;
+      }
+      this.composer.insertMentionChip(file.basename, file.path);
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // 行内选择器数据源（@ 文件/文件夹 / slash 命令）
   // -------------------------------------------------------------------------
 
   private filePickerItems(): PickerItem[] {
+    const pinned: PickerItem[] = [];
+    const rest: PickerItem[] = [];
+    // 置顶：当前笔记 + 最近笔记
+    const current = this.app.workspace.getActiveFile();
+    if (current) {
+      pinned.push({
+        key: "pinned:current",
+        label: current.basename,
+        hint: `当前笔记 · ${current.path}`,
+        icon: "book-open",
+        meta: { name: current.basename, path: current.path },
+      });
+    }
+    const files = this.app.vault.getMarkdownFiles();
+    const recent = files
+      .filter((file) => file.path !== current?.path)
+      .sort((a, b) => (b.stat?.mtime ?? 0) - (a.stat?.mtime ?? 0))
+      .slice(0, 5);
+    for (const file of recent) {
+      pinned.push({
+        key: `pinned:recent:${file.path}`,
+        label: file.basename,
+        hint: `最近修改 · ${file.path}`,
+        icon: "clock",
+        meta: { name: file.basename, path: file.path },
+      });
+    }
     // 文件夹：从笔记路径推导（每个都至少含一篇笔记）
     const folders = new Map<string, number>();
-    const files = this.app.vault.getMarkdownFiles();
     for (const file of files) {
       const parts = file.path.split("/");
       for (let i = 1; i < parts.length; i++) {
@@ -458,15 +651,17 @@ export class ChatView extends ItemView {
         folders.set(folder, (folders.get(folder) ?? 0) + 1);
       }
     }
-    const items: PickerItem[] = [...folders.entries()].map(([path, count]) => ({
-      key: `folder:${path}`,
-      label: `${path.split("/").pop() ?? path}/`,
-      hint: `${path} · ${count} 篇笔记`,
-      icon: "folder",
-      meta: { name: path.split("/").pop() ?? path, path: `${path}/` },
-    }));
+    for (const [path, count] of folders.entries()) {
+      rest.push({
+        key: `folder:${path}`,
+        label: `${path.split("/").pop() ?? path}/`,
+        hint: `${path} · ${count} 篇笔记`,
+        icon: "folder",
+        meta: { name: path.split("/").pop() ?? path, path: `${path}/` },
+      });
+    }
     for (const file of files) {
-      items.push({
+      rest.push({
         key: `file:${file.path}`,
         label: file.basename,
         hint: file.path,
@@ -474,7 +669,8 @@ export class ChatView extends ItemView {
         meta: { name: file.basename, path: file.path },
       });
     }
-    return items.sort((a, b) => a.label.localeCompare(b.label));
+    rest.sort((a, b) => a.label.localeCompare(b.label));
+    return [...pinned, ...rest];
   }
 
   private commandPickerItems(): PickerItem[] {
@@ -493,7 +689,7 @@ export class ChatView extends ItemView {
       icon: "terminal",
       meta: { name: command.name },
     }));
-    return [...agent, ...custom];
+    return [...BUILTIN_COMMANDS, ...agent, ...custom];
   }
 
   /** 加载 vault 自定义命令（5 秒缓存）。 */
@@ -539,10 +735,67 @@ export class ChatView extends ItemView {
     const threadId = this.activeThreadId;
     if (!threadId) return;
     const state = this.service.threadState(threadId);
-    renderBlocks(this.plugin, this.messagesEl, state.blocks.blocks, this.messagesEl);
+    renderBlocks(this.plugin, this.messagesEl, state.blocks.blocks, this.messagesEl, {
+      onFeedback: (block, direction) => void this.handleFeedback(block, direction),
+    });
     this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight });
     if (state.busy) this.threadTitleEl.addClass("dsh-busy");
     else this.threadTitleEl.removeClass("dsh-busy");
+  }
+
+  // -------------------------------------------------------------------------
+  // 消息反馈（👍/👎 → 持续记忆）
+  // -------------------------------------------------------------------------
+
+  private async handleFeedback(block: UiBlock, direction: "up" | "down"): Promise<void> {
+    if (block.kind !== "assistant") return;
+    block.feedback = block.feedback === direction ? undefined : direction;
+    this.scheduleRender();
+    if (direction !== "down") return;
+    new FeedbackModal(this.app, (reason) => {
+      void this.writeFeedback(block, reason);
+    }).open();
+  }
+
+  private async writeFeedback(block: Extract<UiBlock, { kind: "assistant" }>, reason: string): Promise<void> {
+    const quote = block.text.replace(/\s+/g, " ").slice(0, 200);
+    const stamp = new Date().toISOString().slice(0, 10);
+    await appendMemory(this.app.vault, `- [用户反馈 ${stamp}] 对回答「${quote}」不满意：${reason}`);
+    new Notice("已记录反馈到持续记忆");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 反馈原因弹窗
+// ---------------------------------------------------------------------------
+
+class FeedbackModal extends Modal {
+  constructor(
+    app: App,
+    private readonly onSubmit: (reason: string) => void
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass("dsh-feedback");
+    contentEl.createEl("h3", { text: "这条回答哪里不好？" });
+    const textarea = contentEl.createEl("textarea", { cls: "dsh-feedback-input" });
+    textarea.setAttr("placeholder", "例如：没有遵循我的写作风格 / 信息过时 / 格式不对…");
+    const bar = contentEl.createDiv({ cls: "dsh-permission-bar" });
+    const save = bar.createEl("button", { cls: "mod-cta", text: "写入持续记忆" });
+    save.addEventListener("click", () => {
+      const reason = textarea.value.trim();
+      this.close();
+      if (reason) this.onSubmit(reason);
+    });
+    const cancel = bar.createEl("button", { text: "取消" });
+    cancel.addEventListener("click", () => this.close());
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
 

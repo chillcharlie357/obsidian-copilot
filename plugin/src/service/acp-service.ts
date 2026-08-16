@@ -25,6 +25,7 @@ import { applyUpdate, emptyThread, finishStreaming, type ThreadBlocks } from "./
 import { isPathInside, normalizePathAbs, relativeTo } from "../util.js";
 import { electronNodeFallback, resolveNodeBin } from "./bins.js";
 import { builtinDshProfile, expandCommand, type AgentProfile } from "./profiles.js";
+import { MEMORY_FILE, MEMORY_INJECT_MAX, readMemory } from "./memory.js";
 
 export type ServiceStatus = "idle" | "starting" | "ready" | "offline";
 
@@ -269,10 +270,24 @@ export class AcpService {
     state.busy = true;
 
     const { prompt } = await this.buildPrompt(rawText);
-    const systemPrompt = this.settings.systemPrompt?.trim() ?? "";
-    if (!state.primed && systemPrompt !== "") {
-      prompt.unshift({ type: "text", text: systemPrompt });
-      state.primed = true;
+    if (!state.primed) {
+      let injected = false;
+      const systemPrompt = this.settings.systemPrompt?.trim() ?? "";
+      if (systemPrompt !== "") {
+        prompt.unshift({ type: "text", text: systemPrompt });
+        injected = true;
+      }
+      // 持续记忆：跨会话记住用户偏好
+      const memory = await readMemory(this.app.vault);
+      if (memory !== "") {
+        const truncated =
+          memory.length > MEMORY_INJECT_MAX
+            ? `${memory.slice(0, MEMORY_INJECT_MAX)}\n…[记忆内容过长已截断，agent 可读取 ${MEMORY_FILE} 获取完整内容]`
+            : memory;
+        prompt.unshift({ type: "text", text: `<memory>\n${truncated}\n</memory>` });
+        injected = true;
+      }
+      state.primed = injected;
     }
     const promise = peer.request(
       "session/prompt",

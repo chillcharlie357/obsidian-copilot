@@ -708,3 +708,91 @@
   font-size: var(--font-ui-smaller);
   margin-top: 4px;
 }
+
+/* ---------- 当前笔记上下文 pill ---------- */
+.dsh-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 0;
+  flex-shrink: 0;
+}
+
+.dsh-context-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.dsh-context-pill:hover {
+  color: var(--text-normal);
+  border-color: var(--color-accent);
+}
+
+/* ---------- 消息反馈 ---------- */
+.dsh-msg-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.dsh-msg:hover .dsh-msg-actions {
+  opacity: 1;
+}
+
+.dsh-feedback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.dsh-feedback-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.dsh-feedback-btn.is-active {
+  color: var(--color-accent);
+}
+
+/* ---------- 本地提示块 ---------- */
+.dsh-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+/* ---------- 反馈弹窗 ---------- */
+.dsh-feedback-input {
+  width: 100%;
+  min-height: 90px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+  resize: vertical;
+}

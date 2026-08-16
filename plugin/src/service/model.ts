@@ -17,7 +17,7 @@ export interface RefChip {
 
 export type UiBlock =
   | { kind: "user"; text: string; refs: RefChip[] }
-  | { kind: "assistant"; text: string; done: boolean }
+  | { kind: "assistant"; text: string; done: boolean; feedback?: "up" | "down" }
   | { kind: "thought"; text: string }
   | {
       kind: "tool";
@@ -30,6 +30,7 @@ export type UiBlock =
     }
   | { kind: "plan"; entries: PlanEntry[] }
   | { kind: "file-change"; path: string }
+  | { kind: "notice"; text: string }
   | { kind: "error"; message: string };
 
 export interface ThreadBlocks {

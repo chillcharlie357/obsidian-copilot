@@ -267,6 +267,11 @@ export class Composer {
     this.editor.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  /** 当前输入是否已包含某个路径的引用。 */
+  containsMention(path: string): boolean {
+    return this.serialize().includes(`(${path})`);
+  }
+
   /** 外部入口：追加划选文本上下文（引用块 + 源文件 chip）。 */
   insertSelectionContext(name: string, path: string, selection: string, source: string): void {
     const maxLen = 2000;
