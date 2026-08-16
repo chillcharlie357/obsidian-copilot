@@ -4,7 +4,7 @@
  * - 提交时序列化回 `@[名称](路径)` 语法，下游逻辑不变
  * - @/slash 触发、行内选择器、键盘导航全部在侧边栏内部完成
  */
-import { setIcon } from "obsidian";
+import { Platform, setIcon } from "obsidian";
 import type DshCopilotPlugin from "../main.js";
 import { InlinePicker, type PickerItem } from "./picker.js";
 
@@ -30,7 +30,7 @@ export interface ComposerOptions {
 const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
 
 const IDLE_HINT = "Enter 发送 · Shift+Enter 换行 · @ 引用 · / 命令";
-const BUSY_HINT = "Cmd+Enter 追加消息 · 点击「停止」中断";
+const BUSY_HINT = `${Platform.isMacOS ? "Cmd" : "Ctrl"}+Enter 追加消息 · 点击「停止」中断`;
 
 export function parseMentions(text: string): Mention[] {
   const mentions: Mention[] = [];
