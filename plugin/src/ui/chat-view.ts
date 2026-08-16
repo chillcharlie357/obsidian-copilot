@@ -75,6 +75,7 @@ const BUILTIN_COMMANDS: PickerItem[] = [
 export class ChatView extends ItemView {
   private headerStatusEl!: HTMLElement;
   private headerStopEl!: HTMLElement;
+  private modelSelectEl!: HTMLSelectElement;
   private threadTitleEl!: HTMLElement;
   private threadsPanelEl!: HTMLElement;
   private messagesEl!: HTMLElement;
@@ -137,6 +138,12 @@ export class ChatView extends ItemView {
     setIcon(this.headerStopEl, "octagon-x");
     this.headerStopEl.hide();
     this.headerStopEl.addEventListener("click", () => this.cancel());
+
+    // 模型选择器（DSH 后端支持；其他 agent 自动隐藏）
+    this.modelSelectEl = header.createEl("select", { cls: "dsh-model-select" });
+    this.modelSelectEl.createEl("option", { text: "模型…", value: "" });
+    this.modelSelectEl.hide();
+    this.modelSelectEl.addEventListener("change", () => void this.onModelChange());
 
     const listButton = header.createEl("button", { cls: "dsh-icon-btn", attr: { "aria-label": "会话列表" } });
     setIcon(listButton, "history");
@@ -285,6 +292,7 @@ export class ChatView extends ItemView {
     if (!record) return false;
     if (record.sessionId) {
       this.service.bindSession(threadId, record.sessionId);
+      void this.refreshModels();
       return true;
     }
     try {
@@ -315,7 +323,10 @@ export class ChatView extends ItemView {
     this.composer.setBusy(this.service.threadState(threadId).busy);
 
     // 绑定会话映射：agent 命令广告（available_commands_update）依赖它
-    if (record.sessionId) this.service.bindSession(threadId, record.sessionId);
+    if (record.sessionId) {
+      this.service.bindSession(threadId, record.sessionId);
+      void this.refreshModels();
+    }
 
     const state = this.service.threadState(threadId);
     if (state.blocks.blocks.length > 0 || !record.sessionId) {
@@ -421,6 +432,7 @@ export class ChatView extends ItemView {
     // 惰性建会话（正常情况下 newThread 已提前创建）
     console.log("[obsidian-copilot] send 确保会话", { sessionId: record.sessionId });
     if (!(await this.ensureSessionFor(threadId))) return;
+    void this.refreshModels();
     console.log("[obsidian-copilot] send 会话就绪", { sessionId: record.sessionId });
 
     // 内置快捷命令 / 自定义命令展开
@@ -620,6 +632,53 @@ export class ChatView extends ItemView {
       return candidate;
     }
     return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // 模型选择（DSH 后端）
+  // -------------------------------------------------------------------------
+
+  private async refreshModels(): Promise<void> {
+    const threadId = this.activeThreadId;
+    if (!threadId) return;
+    const record = this.threads.get(threadId);
+    if (!record?.sessionId) return;
+    const models = await this.service.agentModelsGet(record.sessionId);
+    if (!models) {
+      this.modelSelectEl.hide();
+      return;
+    }
+    const previous = this.modelSelectEl.value;
+    this.modelSelectEl.empty();
+    for (const group of models.groups) {
+      const optgroup = this.modelSelectEl.createEl("optgroup", { attr: { label: group.name ?? group.id } });
+      for (const model of group.models) {
+        optgroup.createEl("option", { text: model.name ?? model.id, value: `${group.id}|${model.id}` });
+      }
+    }
+    const current = models.current;
+    const currentValue = `${current.provider}|${current.model}`;
+    if (![...this.modelSelectEl.querySelectorAll("option")].some((o) => o.value === currentValue)) {
+      this.modelSelectEl.createEl("option", { text: `${current.provider} · ${current.model}`, value: currentValue });
+    }
+    this.modelSelectEl.value = currentValue || previous;
+    this.modelSelectEl.show();
+  }
+
+  private async onModelChange(): Promise<void> {
+    const threadId = this.activeThreadId;
+    if (!threadId) return;
+    const record = this.threads.get(threadId);
+    if (!record?.sessionId) return;
+    const value = this.modelSelectEl.value;
+    if (!value) return;
+    const [provider, model] = value.split("|");
+    if (!provider || !model) return;
+    const models = await this.service.agentModelsGet(record.sessionId);
+    const current = models?.current;
+    const ok = await this.service.agentModelsSet(record.sessionId, provider, model, current?.reasoningEffort);
+    new Notice(ok ? `已切换模型：${provider} / ${model}（下一轮生效）` : "模型切换失败（当前 agent 不支持或未连接）");
+    if (!ok) void this.refreshModels();
   }
 
   // -------------------------------------------------------------------------

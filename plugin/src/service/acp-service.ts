@@ -595,6 +595,74 @@ export class AcpService {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // DSH 专属能力（ACP 自定义方法；非 DSH agent 会返回 null/false）
+  // -------------------------------------------------------------------------
+
+  /** 读取 DSH 权限预设；不支持时返回 null。 */
+  async agentPermissionGet(): Promise<string | null> {
+    try {
+      const peer = this.ensurePeer();
+      const result = (await peer.request("_dsh/permission.get", { cwd: this.vaultRoot }, 30_000)) as {
+        preset?: string;
+      };
+      return result?.preset ?? null;
+    } catch (error) {
+      console.log("[obsidian-copilot] 权限预设读取不可用:", error instanceof Error ? error.message : error);
+      return null;
+    }
+  }
+
+  /** 设置 DSH 权限预设（read-only / workspace-write / danger-full-access）。 */
+  async agentPermissionSet(preset: string): Promise<boolean> {
+    try {
+      const peer = this.ensurePeer();
+      await peer.request("_dsh/permission.set", { cwd: this.vaultRoot, preset }, 30_000);
+      return true;
+    } catch (error) {
+      console.error("[obsidian-copilot] 权限预设设置失败:", error);
+      return false;
+    }
+  }
+
+  /** 读取会话可用模型与当前选择；不支持时返回 null。 */
+  async agentModelsGet(sessionId: string): Promise<{
+    current: { provider: string; model: string; reasoningEffort?: string };
+    groups: Array<{ id: string; name?: string; models: Array<{ id: string; name?: string }> }>;
+  } | null> {
+    try {
+      const peer = this.ensurePeer();
+      const result = (await peer.request("_dsh/models.get", { sessionId, cwd: this.vaultRoot }, 30_000)) as {
+        current?: { provider: string; model: string; reasoningEffort?: string };
+        groups?: Array<{ id: string; name?: string; models: Array<{ id: string; name?: string }> }>;
+      };
+      if (!result || typeof result !== "object") return null;
+      return {
+        current: result.current ?? { provider: "", model: "" },
+        groups: result.groups ?? [],
+      };
+    } catch (error) {
+      console.log("[obsidian-copilot] 模型选择不可用:", error instanceof Error ? error.message : error);
+      return null;
+    }
+  }
+
+  /** 切换会话模型。 */
+  async agentModelsSet(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<boolean> {
+    try {
+      const peer = this.ensurePeer();
+      await peer.request(
+        "_dsh/models.set",
+        { sessionId, cwd: this.vaultRoot, provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) },
+        30_000
+      );
+      return true;
+    } catch (error) {
+      console.error("[obsidian-copilot] 模型切换失败:", error);
+      return false;
+    }
+  }
+
   /** 便捷：本地追加用户消息块 */
   appendUserBlock(threadId: string, text: string, refs: Array<{ name: string; path: string }>): void {
     const state = this.threadState(threadId);

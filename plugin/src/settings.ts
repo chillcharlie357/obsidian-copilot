@@ -1,4 +1,4 @@
-import { App, Component, MarkdownRenderer, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Component, DropdownComponent, MarkdownRenderer, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DshCopilotPlugin from "./main.js";
 import { DEFAULT_SYSTEM_PROMPT, SYSTEM_PROMPT_RESET_LABEL } from "./service/preamble.js";
 import { builtinDshProfile, type AgentProfile } from "./service/profiles.js";
@@ -106,6 +106,37 @@ export class DshCopilotSettingTab extends PluginSettingTab {
         new ProfileEditorModal(this.app, this.plugin, null).open();
       })
     );
+
+    // -----------------------------------------------------------------------
+    // Agent 能力（DSH）
+    // -----------------------------------------------------------------------
+    new Setting(containerEl).setName("Agent 能力").setHeading();
+
+    const PERMISSION_LABELS: Record<string, string> = {
+      "read-only": "只读（read-only）",
+      "workspace-write": "工作区可写（workspace-write，推荐）",
+      "danger-full-access": "完全访问（danger-full-access）",
+    };
+    let permissionDropdown: DropdownComponent | null = null;
+    new Setting(containerEl)
+      .setName("权限预设")
+      .setDesc("agent 对文件系统的权限级别（DSH 全局预设）：只读 / 仅工作区（vault）可写 / 完全访问。仅 DSH 后端支持。")
+      .addDropdown((dropdown) => {
+        permissionDropdown = dropdown;
+        for (const [value, label] of Object.entries(PERMISSION_LABELS)) dropdown.addOption(value, label);
+        dropdown.setValue("workspace-write");
+        dropdown.onChange(async (value) => {
+          const ok = await this.plugin.service.agentPermissionSet(value);
+          if (ok) new Notice(`权限预设已切换为「${PERMISSION_LABELS[value] ?? value}」`);
+          else {
+            new Notice("权限预设切换失败（当前 agent 不支持或未连接）");
+            this.display();
+          }
+        });
+      });
+    void this.plugin.service.agentPermissionGet().then((preset) => {
+      if (preset) permissionDropdown?.setValue(preset);
+    });
 
     // -----------------------------------------------------------------------
     // 引用与上下文

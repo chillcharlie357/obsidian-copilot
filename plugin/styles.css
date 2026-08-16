@@ -812,3 +812,141 @@
   font-size: var(--font-ui-small);
   resize: vertical;
 }
+
+/* ==========================================================================
+   DeepSeek Harness 视觉对齐（品牌蓝 #5686FE、12/16px 圆角、胶囊元素）
+   ========================================================================== */
+.dsh-copilot {
+  --dsh-blue: rgb(86, 134, 254);
+  --dsh-blue-strong: rgb(65, 118, 230);
+  --dsh-blue-tint: rgba(86, 134, 254, 0.10);
+  --dsh-blue-tint-strong: rgba(86, 134, 254, 0.18);
+  --dsh-blue-border: rgba(86, 134, 254, 0.35);
+  --dsh-radius-md: 12px;
+  --dsh-radius-lg: 16px;
+  --dsh-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+
+/* 头部与状态 */
+.dsh-header {
+  padding: 10px 12px;
+}
+
+.dsh-status[data-state="ready"] { background: var(--dsh-blue); }
+.dsh-status[data-state="starting"] { background: rgb(86, 134, 254, 0.5); }
+
+.dsh-title.dsh-busy::after { background: var(--dsh-blue); }
+
+/* 模型选择器（头部 pill 风格） */
+.dsh-model-select {
+  max-width: 150px;
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  cursor: pointer;
+}
+
+.dsh-model-select:hover { color: var(--text-normal); }
+
+/* 用户气泡：DSH 品牌蓝 */
+.dsh-user .dsh-bubble {
+  background: var(--dsh-blue);
+  color: #fff;
+  border-radius: var(--dsh-radius-lg);
+  border-top-right-radius: 4px;
+  box-shadow: 0 2px 10px rgba(86, 134, 254, 0.35);
+}
+
+/* 助手消息：无气泡文档流（DSH 风格），左侧留品牌色细线 */
+.dsh-assistant .dsh-markdown {
+  padding: 2px 4px 2px 12px;
+  border-left: 2px solid var(--dsh-blue-border);
+  border-radius: 0 var(--dsh-radius-md) var(--dsh-radius-md) 0;
+}
+
+/* 输入区 */
+.dsh-composer-input,
+.dsh-composer-input[contenteditable="true"] {
+  border-radius: var(--dsh-radius-lg);
+  border: 1px solid var(--background-modifier-border);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.dsh-composer-input:focus {
+  border-color: var(--dsh-blue);
+  box-shadow: 0 0 0 3px rgba(86, 134, 254, 0.15);
+}
+
+.dsh-send-btn.mod-cta {
+  background: var(--dsh-blue);
+  color: #fff;
+  border-radius: var(--dsh-radius-lg);
+  border: none;
+  box-shadow: 0 2px 8px rgba(86, 134, 254, 0.35);
+}
+
+.dsh-send-btn.mod-cta:hover {
+  background: var(--dsh-blue-strong);
+}
+
+/* chips 与 pill */
+.dsh-chip { background: var(--dsh-blue); }
+.dsh-chip-folder { background: var(--dsh-blue-strong); }
+.dsh-chip-inline { background: rgba(255, 255, 255, 0.25); }
+.dsh-context-pill { border-radius: 999px; border-color: var(--dsh-blue-border); }
+.dsh-context-pill:hover { color: var(--dsh-blue-strong); border-color: var(--dsh-blue); }
+
+/* 行内选择器 */
+.dsh-picker {
+  border-radius: var(--dsh-radius-md);
+  box-shadow: var(--dsh-shadow);
+}
+
+.dsh-picker-item { border-radius: 8px; }
+.dsh-picker-selected { background: var(--dsh-blue-tint); outline: none; }
+.dsh-picker-selected .dsh-picker-label { color: var(--dsh-blue-strong); }
+.dsh-picker-item:hover { background: var(--dsh-blue-tint); }
+
+/* 工具卡片 / 推理 / 计划 / 卡片类元素统一 12px 圆角 */
+.dsh-tool,
+.dsh-thought,
+.dsh-plan,
+.dsh-prompt-card,
+.dsh-permission .modal-content,
+.dsh-error {
+  border-radius: var(--dsh-radius-md);
+}
+
+.dsh-tool-json,
+.dsh-tool-text,
+.dsh-thought-body,
+.dsh-diff-old,
+.dsh-diff-new {
+  border-radius: 8px;
+}
+
+/* 反馈按钮激活态 */
+.dsh-feedback-btn.is-active { color: var(--dsh-blue); }
+
+/* 权限/反馈弹窗按钮 */
+.dsh-permission-bar button.mod-cta {
+  background: var(--dsh-blue);
+  color: #fff;
+  border: none;
+}
+
+/* 滚动条（DSH 风格细滚动条） */
+.dsh-messages::-webkit-scrollbar,
+.dsh-picker-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dsh-messages::-webkit-scrollbar-thumb,
+.dsh-picker-list::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+}

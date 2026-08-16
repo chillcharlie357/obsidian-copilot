@@ -163,9 +163,90 @@ export class AcpServer {
         // 规范中 cancel 是通知；容忍 request 形式
         this.cancel((params as { sessionId: string })?.sessionId);
         return null;
+      // DSH 专属扩展（ACP 自定义方法，下划线前缀）
+      case "_dsh/permission.get":
+        return this.dshPermissionGet(params as { cwd?: string });
+      case "_dsh/permission.set":
+        return this.dshPermissionSet(params as { cwd?: string; preset: string });
+      case "_dsh/models.get":
+        return this.dshModelsGet(params as { sessionId: string; cwd?: string });
+      case "_dsh/models.set":
+        return this.dshModelsSet(params as {
+          sessionId: string;
+          provider: string;
+          model: string;
+          reasoningEffort?: string;
+          cwd?: string;
+        });
       default:
         throw new RpcError(ERR_METHOD_NOT_FOUND, `method not found: ${method}`);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // DSH 专属扩展：权限预设 / 模型选择
+  // -------------------------------------------------------------------------
+
+  private async dshPermissionGet(params: { cwd?: string }): Promise<{ preset: string }> {
+    await this.manager.ensure(params.cwd ?? process.cwd());
+    const desc = await this.client.call<{
+      namespaces?: Array<{ ns: string; value?: { defaultPreset?: string }; revision?: number }>;
+    }>("settings.describe", {});
+    const ns = desc.namespaces?.find((item) => item.ns === "permission");
+    return { preset: ns?.value?.defaultPreset ?? "workspace-write" };
+  }
+
+  private async dshPermissionSet(params: { cwd?: string; preset: string }): Promise<{ preset: string }> {
+    const valid = ["read-only", "workspace-write", "danger-full-access"];
+    if (!valid.includes(params.preset)) {
+      throw new RpcError(ERR_INVALID_PARAMS, `无效的权限预设: ${params.preset}`);
+    }
+    await this.manager.ensure(params.cwd ?? process.cwd());
+    const desc = await this.client.call<{
+      namespaces?: Array<{ ns: string; value?: { defaultPreset?: string }; revision?: number }>;
+    }>("settings.describe", {});
+    const ns = desc.namespaces?.find((item) => item.ns === "permission");
+    if (!ns) throw new RpcError(ERR_METHOD_NOT_FOUND, "permission 命名空间不可用");
+    const updated = await this.client.call<{ value?: { defaultPreset?: string } }>("settings.update", {
+      ns: "permission",
+      patch: { defaultPreset: params.preset },
+      ...(typeof ns.revision === "number" ? { expectedRevision: ns.revision } : {}),
+    });
+    this.config.log(`[acp] 权限预设 → ${params.preset}`);
+    return { preset: updated.value?.defaultPreset ?? params.preset };
+  }
+
+  private async dshModelsGet(params: { sessionId: string; cwd?: string }): Promise<unknown> {
+    let ctx = this.sessions.get(params.sessionId);
+    if (!ctx) {
+      ctx = this.newCtx(params.sessionId, params.cwd ?? process.cwd());
+      this.sessions.set(params.sessionId, ctx);
+    }
+    await this.manager.ensure(ctx.cwd);
+    return this.client.call("session.models", { sessionId: params.sessionId });
+  }
+
+  private async dshModelsSet(params: {
+    sessionId: string;
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+    cwd?: string;
+  }): Promise<unknown> {
+    let ctx = this.sessions.get(params.sessionId);
+    if (!ctx) {
+      ctx = this.newCtx(params.sessionId, params.cwd ?? process.cwd());
+      this.sessions.set(params.sessionId, ctx);
+    }
+    await this.manager.ensure(ctx.cwd);
+    const result = await this.client.call("session.selectModel", {
+      sessionId: params.sessionId,
+      provider: params.provider,
+      model: params.model,
+      ...(params.reasoningEffort ? { reasoningEffort: params.reasoningEffort } : {}),
+    });
+    this.config.log(`[acp] 模型切换 → ${params.provider}/${params.model}`);
+    return result;
   }
 
   private async handleNotification(method: string, params: unknown): Promise<void> {
