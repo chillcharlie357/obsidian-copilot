@@ -1,4 +1,4 @@
-import { App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Component, MarkdownRenderer, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DshCopilotPlugin from "./main.js";
 import { DEFAULT_SYSTEM_PROMPT, SYSTEM_PROMPT_RESET_LABEL } from "./service/preamble.js";
 import { builtinDshProfile, type AgentProfile } from "./service/profiles.js";
@@ -147,24 +147,12 @@ export class DshCopilotSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("会话系统提示词").setHeading();
 
     new Setting(containerEl)
-      .setName("系统提示词")
-      .setDesc("在每个新会话的第一条消息前注入（聊天界面不可见）。针对 Obsidian 场景优化 agent 行为；清空即关闭注入。")
-      .addTextArea((area) => {
-        area
-          .setPlaceholder("留空关闭注入")
-          .setValue(settings.systemPrompt)
-          .onChange(async (value) => {
-            settings.systemPrompt = value;
-            await this.plugin.saveSettings();
-          });
-        area.inputEl.rows = 12;
-        area.inputEl.cols = 50;
-        area.inputEl.addClass("dsh-settings-prompt");
-      });
+    // 系统提示词卡片：预览（Markdown 渲染，默认）/ 编辑 双模式
+    this.renderPromptCard(containerEl);
 
     new Setting(containerEl).setName(SYSTEM_PROMPT_RESET_LABEL).setDesc("将系统提示词恢复为内置默认值").addButton((button) =>
       button.setButtonText("恢复默认").onClick(async () => {
-        settings.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+        this.plugin.settings.systemPrompt = DEFAULT_SYSTEM_PROMPT;
         await this.plugin.saveSettings();
         this.display();
       })
@@ -174,6 +162,82 @@ export class DshCopilotSettingTab extends PluginSettingTab {
       button.setButtonText("重启").onClick(async () => {
         await this.plugin.service.restart();
       })
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 系统提示词卡片（预览 / 编辑）
+  // -------------------------------------------------------------------------
+
+  private promptChild: Component | null = null;
+  private promptMode: "preview" | "edit" = "preview";
+
+  private renderPromptCard(containerEl: HTMLElement): void {
+    // 重新渲染设置页时释放上一次预览的渲染组件
+    this.promptChild?.unload();
+    this.promptChild = null;
+    const settings = this.plugin.settings;
+    const card = containerEl.createDiv({ cls: "dsh-prompt-card" });
+
+    const head = card.createDiv({ cls: "dsh-prompt-head" });
+    head.createSpan({ cls: "dsh-prompt-title", text: "系统提示词" });
+    head.createSpan({ cls: "dsh-prompt-count" });
+    const previewBtn = head.createEl("button", { cls: "dsh-prompt-mode-btn", text: "预览" });
+    const editBtn = head.createEl("button", { cls: "dsh-prompt-mode-btn", text: "编辑" });
+    const hint = head.createSpan({ cls: "dsh-prompt-head-hint", text: "每个新会话首条消息前注入，聊天界面不可见；清空 = 关闭" });
+
+    const previewEl = card.createDiv({ cls: "dsh-prompt-preview" });
+    const editEl = card.createDiv({ cls: "dsh-prompt-edit" });
+    const textarea = editEl.createEl("textarea", { cls: "dsh-prompt-textarea" });
+    textarea.value = settings.systemPrompt;
+    textarea.setAttr("placeholder", "留空关闭注入");
+    const count = (): void => {
+      const value = settings.systemPrompt;
+      const span = head.querySelector(".dsh-prompt-count");
+      if (span) span.setText(`${value.length.toLocaleString()} 字符`);
+    };
+    count();
+
+    const show = (mode: "preview" | "edit"): void => {
+      this.promptMode = mode;
+      previewBtn.toggleClass("is-active", mode === "preview");
+      editBtn.toggleClass("is-active", mode === "edit");
+      previewEl.toggleClass("dsh-hidden", mode !== "preview");
+      editEl.toggleClass("dsh-hidden", mode !== "edit");
+      if (mode === "preview") {
+        this.renderPromptPreview(previewEl);
+      } else {
+        this.promptChild?.unload();
+        this.promptChild = null;
+      }
+    };
+
+    const save = async (): Promise<void> => {
+      settings.systemPrompt = textarea.value;
+      await this.plugin.saveSettings();
+      count();
+    };
+
+    previewBtn.addEventListener("click", () => show("preview"));
+    editBtn.addEventListener("click", () => show("edit"));
+    textarea.addEventListener("input", () => void save());
+
+    show("preview");
+  }
+
+  /** 用 Obsidian 的 Markdown 渲染器展示提示词预览（可读性优先）。 */
+  private renderPromptPreview(el: HTMLElement): void {
+    this.promptChild?.unload();
+    this.promptChild = new Component();
+    this.promptChild.load();
+    el.empty();
+    const text = this.plugin.settings.systemPrompt.trim();
+    void MarkdownRenderer.render(
+      this.app,
+      text === "" ? "*（留空 = 关闭会话前缀注入）*" : text,
+      el,
+      "",
+      this.promptChild
     );
   }
 }

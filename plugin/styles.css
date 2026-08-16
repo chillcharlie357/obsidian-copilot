@@ -503,3 +503,153 @@
   font-size: var(--font-ui-smaller);
   resize: vertical;
 }
+
+/* ---------- 设置页：系统提示词卡片 ---------- */
+.dsh-prompt-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  background: var(--background-secondary);
+  margin: 4px 0 14px;
+}
+
+.dsh-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary-alt);
+}
+
+.dsh-prompt-title {
+  font-weight: 600;
+  font-size: var(--font-ui-medium);
+}
+
+.dsh-prompt-head-hint {
+  flex: 1;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-prompt-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.dsh-prompt-mode-btn {
+  padding: 3px 10px;
+  font-size: var(--font-ui-smaller);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dsh-prompt-mode-btn:hover {
+  color: var(--text-normal);
+}
+
+.dsh-prompt-mode-btn.is-active {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  border-color: var(--color-accent);
+}
+
+/* 预览模式：放大可读排版 */
+.dsh-prompt-preview {
+  padding: 14px 18px 18px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  font-size: var(--font-ui-small);
+  line-height: 1.7;
+  color: var(--text-normal);
+}
+
+.dsh-prompt-preview > :first-child {
+  margin-top: 0;
+}
+
+.dsh-prompt-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.dsh-prompt-preview h1,
+.dsh-prompt-preview h2,
+.dsh-prompt-preview h3 {
+  margin: 14px 0 6px;
+  line-height: 1.35;
+  color: var(--text-normal);
+}
+
+.dsh-prompt-preview h1 {
+  font-size: var(--font-ui-large);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+}
+
+.dsh-prompt-preview h2 {
+  font-size: var(--font-ui-medium);
+}
+
+.dsh-prompt-preview h3 {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.dsh-prompt-preview p {
+  margin: 6px 0;
+}
+
+.dsh-prompt-preview ul,
+.dsh-prompt-preview ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.dsh-prompt-preview li {
+  margin: 3px 0;
+}
+
+.dsh-prompt-preview li::marker {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.dsh-prompt-preview code {
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  padding: 1px 5px;
+  font-size: 0.92em;
+}
+
+.dsh-prompt-preview em {
+  color: var(--text-muted);
+}
+
+/* 编辑模式 */
+.dsh-prompt-textarea {
+  width: 100%;
+  min-height: 320px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 0;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.dsh-prompt-textarea:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
