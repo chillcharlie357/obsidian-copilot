@@ -495,3 +495,11 @@
   margin-top: 12px;
   flex-wrap: wrap;
 }
+
+/* ---------- 设置页：系统提示词 ---------- */
+.dsh-settings-prompt {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  resize: vertical;
+}

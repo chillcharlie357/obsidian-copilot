@@ -43,6 +43,8 @@ export interface AcpSettings {
   nodeBin: string;
   killDshOnExit: boolean;
   maxMentionChars: number;
+  /** 会话首条消息前注入的 Obsidian 场景前缀（空 = 关闭） */
+  systemPrompt: string;
 }
 
 type Listener = (event: string, payload: unknown) => void;
@@ -57,7 +59,7 @@ export class AcpService {
   private listeners = new Set<Listener>();
   private permissionQueue: PermissionRequestInfo[] = [];
   /** threadId → 渲染状态 */
-  readonly threadStates = new Map<string, { blocks: ThreadBlocks; busy: boolean; replaying: boolean; commands: AvailableCommand[] }>();
+  readonly threadStates = new Map<string, { blocks: ThreadBlocks; busy: boolean; replaying: boolean; commands: AvailableCommand[]; primed: boolean }>();
 
   constructor(
     private readonly app: App,
@@ -89,10 +91,10 @@ export class AcpService {
     return this.capabilities;
   }
 
-  threadState(threadId: string): { blocks: ThreadBlocks; busy: boolean; replaying: boolean; commands: AvailableCommand[] } {
+  threadState(threadId: string): { blocks: ThreadBlocks; busy: boolean; replaying: boolean; commands: AvailableCommand[]; primed: boolean } {
     let state = this.threadStates.get(threadId);
     if (!state) {
-      state = { blocks: emptyThread(), busy: false, replaying: false, commands: [] };
+      state = { blocks: emptyThread(), busy: false, replaying: false, commands: [], primed: false };
       this.threadStates.set(threadId, state);
     }
     return state;
@@ -241,10 +243,14 @@ export class AcpService {
   async loadSession(sessionId: string): Promise<void> {
     const peer = this.ensurePeer();
     await peer.request("session/load", { sessionId, cwd: this.vaultRoot, mcpServers: [] }, 120_000);
+    // 已有历史的会话无需再注入会话前缀
+    const threadId = this.threadIdForSession(sessionId);
+    if (threadId) this.threadState(threadId).primed = true;
   }
 
   /**
    * 发送提示：解析 @ 引用并构造 ACP prompt 块（展示文本由 UI 层另行渲染）。
+   * 会话首条消息前注入 Obsidian 场景前缀（system prompt，聊天 UI 不可见）。
    */
   async sendPrompt(threadId: string, sessionId: string, rawText: string): Promise<void> {
     const peer = this.ensurePeer();
@@ -252,6 +258,11 @@ export class AcpService {
     state.busy = true;
 
     const { prompt } = await this.buildPrompt(rawText);
+    const systemPrompt = this.settings.systemPrompt?.trim() ?? "";
+    if (!state.primed && systemPrompt !== "") {
+      prompt.unshift({ type: "text", text: systemPrompt });
+      state.primed = true;
+    }
     const promise = peer.request(
       "session/prompt",
       { sessionId, prompt },
@@ -375,6 +386,7 @@ export class AcpService {
         }
         if (!threadId) return;
         const state = this.threadState(threadId);
+        if (notification.update.sessionUpdate === "user_message_chunk") state.primed = true;
         state.blocks = applyUpdate(state.blocks, notification.update, { replaying: state.replaying });
         this.emit("update", { threadId, sessionId: notification.sessionId });
       }

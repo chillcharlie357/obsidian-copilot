@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type DshCopilotPlugin from "./main.js";
+import { DEFAULT_SYSTEM_PROMPT, SYSTEM_PROMPT_RESET_LABEL } from "./service/preamble.js";
 
 export interface DshCopilotSettings {
   /** DSH web API 地址（传给适配器） */
@@ -16,6 +17,8 @@ export interface DshCopilotSettings {
   maxMentionChars: number;
   /** 显示推理过程 */
   showReasoning: boolean;
+  /** 会话首条消息前注入的 Obsidian 场景前缀（空 = 关闭） */
+  systemPrompt: string;
 }
 
 export const DEFAULT_SETTINGS: DshCopilotSettings = {
@@ -26,6 +29,7 @@ export const DEFAULT_SETTINGS: DshCopilotSettings = {
   killDshOnExit: true,
   maxMentionChars: 12000,
   showReasoning: true,
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
 };
 
 export class DshCopilotSettingTab extends PluginSettingTab {
@@ -100,6 +104,30 @@ export class DshCopilotSettingTab extends PluginSettingTab {
       toggle.setValue(settings.showReasoning).onChange(async (value) => {
         settings.showReasoning = value;
         await this.plugin.saveSettings();
+      })
+    );
+
+    new Setting(containerEl)
+      .setName("会话系统提示词")
+      .setDesc("在每个新会话的第一条消息前注入（聊天界面不可见）。针对 Obsidian 场景优化 agent 行为；清空即关闭注入。")
+      .addTextArea((area) => {
+        area
+          .setPlaceholder("留空关闭注入")
+          .setValue(settings.systemPrompt)
+          .onChange(async (value) => {
+            settings.systemPrompt = value;
+            await this.plugin.saveSettings();
+          });
+        area.inputEl.rows = 12;
+        area.inputEl.cols = 50;
+        area.inputEl.addClass("dsh-settings-prompt");
+      });
+
+    new Setting(containerEl).setName(SYSTEM_PROMPT_RESET_LABEL).setDesc("将系统提示词恢复为内置默认值").addButton((button) =>
+      button.setButtonText("恢复默认").onClick(async () => {
+        settings.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+        await this.plugin.saveSettings();
+        this.display();
       })
     );
 
