@@ -15,6 +15,8 @@ export interface DshCopilotSettings {
   killDshOnExit: boolean;
   /** @引用文件内嵌内容的最大字符数 */
   maxMentionChars: number;
+  /** 文件夹 @ 引用最多内嵌的笔记篇数 */
+  maxFolderFiles: number;
   /** 显示推理过程 */
   showReasoning: boolean;
   /** 会话首条消息前注入的 Obsidian 场景前缀（空 = 关闭） */
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: DshCopilotSettings = {
   nodeBin: "",
   killDshOnExit: true,
   maxMentionChars: 12000,
+  maxFolderFiles: 30,
   showReasoning: true,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
 };
@@ -96,6 +99,17 @@ export class DshCopilotSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           const parsed = Number.parseInt(value, 10);
           settings.maxMentionChars = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.maxMentionChars;
+          await this.plugin.saveSettings();
+        })
+    );
+
+    new Setting(containerEl).setName("文件夹引用篇数上限").setDesc("@ 引用文件夹时最多内嵌多少篇笔记（会附目录清单，超出部分 agent 可用工具自行读取）").addText((text) =>
+      text
+        .setPlaceholder("30")
+        .setValue(String(settings.maxFolderFiles))
+        .onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          settings.maxFolderFiles = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.maxFolderFiles;
           await this.plugin.saveSettings();
         })
     );

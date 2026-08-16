@@ -10,7 +10,7 @@
 ## 能力
 
 - **侧边栏对话**：Obsidian 右侧栏 ItemView，多轮会话，流式输出（正文 + 推理过程 + 工具调用卡片）。
-- **@ 引用文件**：输入 `@` 在**侧边栏内部**弹出行内选择器（Codex 风格，非全局搜索框），选中文件以 ACP `embedded resource` 内嵌进上下文（超出上限部分由 agent 自行读取）。
+- **@ 引用文件/文件夹**：输入 `@` 在**侧边栏内部**弹出行内选择器（Codex 风格，非全局搜索框）。选中文件以 ACP `embedded resource` 内嵌进上下文；选中文件夹（📁）会附目录清单并批量内嵌其中笔记（篇数上限可在设置调整），超出上限部分由 agent 自行读取。
 - **Slash 命令**：
   - **agent 命令**：DSH 内置命令（`/plan` `/goal` `/compact` `/feedback`）通过 ACP `available_commands_update` 广告，原样随 prompt 发送；
   - **自定义命令**：vault 根目录 `.obsidian-copilot/commands/*.md`，文件名即命令名（如 `/review`），frontmatter `description` 为说明，正文为 prompt 模板，`$ARGUMENTS` 替换用户输入（客户端展开后发送）。

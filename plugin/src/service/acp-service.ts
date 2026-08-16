@@ -43,6 +43,8 @@ export interface AcpSettings {
   nodeBin: string;
   killDshOnExit: boolean;
   maxMentionChars: number;
+  /** 文件夹 @ 引用最多内嵌的笔记篇数 */
+  maxFolderFiles: number;
   /** 会话首条消息前注入的 Obsidian 场景前缀（空 = 关闭） */
   systemPrompt: string;
 }
@@ -297,7 +299,7 @@ export class AcpService {
   // -------------------------------------------------------------------------
 
   private async buildPrompt(rawText: string): Promise<{ prompt: ContentBlock[] }> {
-    // @[名称](相对路径)
+    // @[名称](相对路径)，路径以 "/" 结尾表示文件夹引用
     const mentionRe = /@\[([^\]]+)\]\(([^)]+)\)/g;
     const mentions: Array<{ name: string; path: string }> = [];
     let match: RegExpExecArray | null;
@@ -309,36 +311,87 @@ export class AcpService {
     const prompt: ContentBlock[] = [{ type: "text", text }];
     const embedded = this.capabilities?.promptCapabilities?.embeddedContext !== false;
     for (const mention of mentions) {
-      const absolute = this.resolveVaultPath(mention.path);
-      if (!absolute) continue;
-      try {
-        const content = await this.app.vault.adapter.read(mention.path);
-        const truncated = content.length > this.settings.maxMentionChars
-          ? `${content.slice(0, this.settings.maxMentionChars)}\n…[内容过长已截断，agent 可自行读取完整文件]`
-          : content;
-        if (embedded) {
-          prompt.push({
-            type: "resource",
-            resource: {
-              uri: `file://${absolute}`,
-              mimeType: "text/markdown",
-              text: truncated,
-            },
-          });
-        } else {
-          prompt.push({
-            type: "text",
-            text: `<context path="${mention.path}">\n${truncated}\n</context>`,
-          });
-        }
-      } catch (error) {
-        prompt.push({
-          type: "text",
-          text: `<context-error path="${mention.path}">无法读取：${error instanceof Error ? error.message : String(error)}</context-error>`,
-        });
+      if (mention.path.endsWith("/")) {
+        await this.appendFolderContext(prompt, mention, embedded);
+        continue;
       }
+      await this.appendFileContext(prompt, mention, embedded);
     }
     return { prompt };
+  }
+
+  /** 单文件 @ 引用 */
+  private async appendFileContext(
+    prompt: ContentBlock[],
+    mention: { name: string; path: string },
+    embedded: boolean
+  ): Promise<void> {
+    const absolute = this.resolveVaultPath(mention.path);
+    if (!absolute) return;
+    try {
+      const content = await this.app.vault.adapter.read(mention.path);
+      const truncated = this.truncateMention(content);
+      if (embedded) {
+        prompt.push({
+          type: "resource",
+          resource: {
+            uri: `file://${absolute}`,
+            mimeType: "text/markdown",
+            text: truncated,
+          },
+        });
+      } else {
+        prompt.push({
+          type: "text",
+          text: `<context path="${mention.path}">\n${truncated}\n</context>`,
+        });
+      }
+    } catch (error) {
+      prompt.push({
+        type: "text",
+        text: `<context-error path="${mention.path}">无法读取：${error instanceof Error ? error.message : String(error)}</context-error>`,
+      });
+    }
+  }
+
+  /** 文件夹 @ 引用：目录清单 + 批量内嵌其中的笔记（有数量上限） */
+  private async appendFolderContext(
+    prompt: ContentBlock[],
+    mention: { name: string; path: string },
+    embedded: boolean
+  ): Promise<void> {
+    const folder = mention.path.replace(/\/+$/, "");
+    const files = this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => file.path === folder || file.path.startsWith(`${folder}/`))
+      .sort((a, b) => a.path.localeCompare(b.path));
+    if (files.length === 0) {
+      prompt.push({
+        type: "text",
+        text: `<context-error path="${folder}/">文件夹不存在或不含任何笔记</context-error>`,
+      });
+      return;
+    }
+    const maxFiles = Math.max(1, this.settings.maxFolderFiles ?? 30);
+    const included = files.slice(0, maxFiles);
+    const listing = included.map((file) => file.path).join("\n");
+    const truncatedNote =
+      files.length > included.length
+        ? `\n…（共 ${files.length} 篇笔记，仅内嵌前 ${included.length} 篇；其余可由 agent 用工具自行读取）`
+        : "";
+    prompt.push({
+      type: "text",
+      text: `<folder-context path="${folder}/">\n${listing}${truncatedNote}\n</folder-context>`,
+    });
+    for (const file of included) {
+      await this.appendFileContext(prompt, { name: file.basename, path: file.path }, embedded);
+    }
+  }
+
+  private truncateMention(content: string): string {
+    return content.length > this.settings.maxMentionChars
+      ? `${content.slice(0, this.settings.maxMentionChars)}\n…[内容过长已截断，agent 可自行读取完整文件]`
+      : content;
   }
 
   /** vault 相对路径 → 绝对路径（无 vault 信息时用 vaultRoot 拼接） */

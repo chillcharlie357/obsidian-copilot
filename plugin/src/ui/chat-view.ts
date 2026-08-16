@@ -355,20 +355,37 @@ export class ChatView extends ItemView {
   }
 
   // -------------------------------------------------------------------------
-  // 行内选择器数据源（@ 文件 / slash 命令）
+  // 行内选择器数据源（@ 文件/文件夹 / slash 命令）
   // -------------------------------------------------------------------------
 
   private filePickerItems(): PickerItem[] {
-    return this.app.vault
-      .getMarkdownFiles()
-      .map((file) => ({
+    // 文件夹：从笔记路径推导（每个都至少含一篇笔记）
+    const folders = new Map<string, number>();
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      const parts = file.path.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        const folder = parts.slice(0, i).join("/");
+        folders.set(folder, (folders.get(folder) ?? 0) + 1);
+      }
+    }
+    const items: PickerItem[] = [...folders.entries()].map(([path, count]) => ({
+      key: `folder:${path}`,
+      label: `${path.split("/").pop() ?? path}/`,
+      hint: `${path} · ${count} 篇笔记`,
+      icon: "folder",
+      meta: { name: path.split("/").pop() ?? path, path: `${path}/` },
+    }));
+    for (const file of files) {
+      items.push({
         key: `file:${file.path}`,
         label: file.basename,
         hint: file.path,
         icon: "file-text",
         meta: { name: file.basename, path: file.path },
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      });
+    }
+    return items.sort((a, b) => a.label.localeCompare(b.label));
   }
 
   private commandPickerItems(): PickerItem[] {
