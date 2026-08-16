@@ -133,6 +133,10 @@ export class AcpServer {
   }
 
   dispose(): void {
+    if (this.watchdogTimer) {
+      clearTimeout(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
     this.streams.stop();
     this.manager.dispose();
     for (const ctx of this.sessions.values()) {
@@ -264,6 +268,7 @@ export class AcpServer {
         cancelRequested: false,
       };
       ctx.pending.push(pending);
+      this.ensureSettleWatchdog();
       void (async () => {
         try {
           const rpcId = randomUuid();
@@ -507,6 +512,43 @@ export class AcpServer {
       if (at >= 0) ctx.pending.splice(at, 1);
       first.resolve({ stopReason: "cancelled" });
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // 结算看门狗：不依赖事件流，轮询 DSH 会话状态兜底
+  // -------------------------------------------------------------------------
+
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** 有等待中的 prompt 时启动轮询；全部结算后自动停止。 */
+  private ensureSettleWatchdog(): void {
+    if (this.watchdogTimer) return;
+    const tick = async (): Promise<void> => {
+      this.watchdogTimer = null;
+      try {
+        const hasPending = [...this.sessions.values()].some((ctx) => ctx.pending.length > 0);
+        if (!hasPending) return;
+        const res = await this.client.call<{ items?: Array<{ sessionId: string; running: boolean }> }>(
+          "session.list",
+          {},
+          { timeoutMs: 10_000 }
+        );
+        for (const ctx of this.sessions.values()) {
+          if (ctx.pending.length === 0) continue;
+          const row = res.items?.find((item) => item.sessionId === ctx.sessionId);
+          if (row && row.running === false) {
+            this.config.log(`[acp] 看门狗结算 ${ctx.sessionId}（running=false）`);
+            this.settle(ctx);
+          }
+        }
+      } catch (error) {
+        this.config.log(`[acp] 看门狗轮询失败: ${String(error)}`);
+      }
+      if ([...this.sessions.values()].some((ctx) => ctx.pending.length > 0)) {
+        this.watchdogTimer = setTimeout(() => void tick(), 4000);
+      }
+    };
+    this.watchdogTimer = setTimeout(() => void tick(), 4000);
   }
 
   // -------------------------------------------------------------------------
