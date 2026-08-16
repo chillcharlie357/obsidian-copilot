@@ -1,0 +1,20 @@
+# vscode / intellij
+.vscode/
+.idea/
+*.iml
+
+# npm / pnpm
+node_modules/
+.pnpm-store/
+
+# 构建产物（发布走 GitHub Release，不提交仓库）
+dist/
+release/
+
+# obsidian
+data.json
+
+# 日志与系统文件
+*.log
+.DS_Store
+/tmp/

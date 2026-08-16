@@ -1,0 +1,68 @@
+name: Release Obsidian plugin
+
+on:
+    push:
+        tags:
+            - '*'
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            id-token: write
+            attestations: write
+        steps:
+            - uses: actions/checkout@v6
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 10
+
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build plugin
+              run: pnpm build
+
+            - name: Verify tag matches manifest version
+              run: |
+                  tag="${GITHUB_REF#refs/tags/}"
+                  manifest_version="$(node -p "require('./plugin/manifest.json').version")"
+                  if [ "$tag" != "$manifest_version" ]; then
+                    echo "::error::tag $tag does not match manifest.json version $manifest_version"
+                    exit 1
+                  fi
+
+            - name: Attest build provenance
+              uses: actions/attest@v4
+              with:
+                  subject-path: |
+                      plugin/dist/main.js
+                      plugin/dist/styles.css
+
+            - name: Create release
+              working-directory: plugin/dist
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  tag="${GITHUB_REF#refs/tags/}"
+
+                  gh release create "$tag" \
+                    --title="$tag" \
+                    --draft \
+                    main.js manifest.json styles.css
+
+            - name: Upload adapter as extra asset
+              working-directory: plugin/dist
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  tag="${GITHUB_REF#refs/tags/}"
+                  gh release upload "$tag" adapter.cjs --clobber

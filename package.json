@@ -1,0 +1,22 @@
+{
+  "name": "dsh-obsidian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH Copilot: Obsidian 侧边栏 AI 助手插件（ACP 客户端 + DSH ACP 适配器）",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm -r --filter './adapter/**' build && pnpm -r --filter './plugin/**' build",
+    "build:adapter": "pnpm --filter dsh-acp-adapter build",
+    "build:plugin": "pnpm --filter dsh-obsidian-plugin build",
+    "typecheck": "pnpm -r typecheck",
+    "version": "node scripts/version-bump.mjs && git add plugin/manifest.json plugin/versions.json plugin/package.json",
+    "test:adapter": "node scripts/e2e-adapter.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
