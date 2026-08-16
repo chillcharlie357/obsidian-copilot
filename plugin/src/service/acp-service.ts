@@ -525,11 +525,21 @@ export class AcpService {
       resolve: () => undefined,
     };
     return new Promise<RequestPermissionResponse>((resolve) => {
+      let settled = false;
       info.resolve = (outcome) => {
+        if (settled) return;
+        settled = true;
         resolve({ outcome });
       };
       this.permissionQueue.push(info);
       this.emit("permission", info);
+      // 兜底：60 秒无人应答（视图未打开/事件丢失）→ 自动取消，绝不让 agent 永久阻塞
+      setTimeout(() => {
+        if (!settled) {
+          this.answerPermission(info, "cancelled");
+          new Notice(`Obsidian Copilot：权限请求「${info.title}」超时未应答，已自动拒绝`);
+        }
+      }, 60_000);
     });
   }
 

@@ -847,6 +847,8 @@ class FeedbackModal extends Modal {
 // ---------------------------------------------------------------------------
 
 class PermissionModal extends Modal {
+  private decided = false;
+
   constructor(
     app: App,
     private readonly info: PermissionRequestInfo,
@@ -871,18 +873,22 @@ class PermissionModal extends Modal {
         text: option.name,
       });
       button.addEventListener("click", () => {
+        this.decided = true;
         this.onDecision("selected", option.optionId);
         this.close();
       });
     }
     const cancelButton = bar.createEl("button", { text: "取消" });
     cancelButton.addEventListener("click", () => {
+      this.decided = true;
       this.onDecision("cancelled");
       this.close();
     });
   }
 
   onClose(): void {
+    // 关键修复：Esc/点击外部关闭 = 明确拒绝，绝不让审批静默悬挂
+    if (!this.decided) this.onDecision("cancelled");
     this.contentEl.empty();
   }
 }
