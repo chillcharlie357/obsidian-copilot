@@ -73,6 +73,11 @@ export class Composer {
         "data-placeholder": "输入问题，@ 引用笔记，/ 命令，Enter 发送…",
       },
     });
+    // 发送/停止按钮放在输入框右侧（抬高位置、增大点击面积，避免底边冲突）
+    this.sendButton = box.createEl("button", { cls: "dsh-send-btn mod-cta" });
+    this.sendButton.setText("发送");
+    this.sendButton.addEventListener("click", () => this.submit());
+
     const bar = container.createDiv({ cls: "dsh-composer-bar" });
     const mentionButton = bar.createEl("button", { cls: "dsh-icon-btn", attr: { "aria-label": "@引用文件" } });
     setIcon(mentionButton, "at-sign");
@@ -82,9 +87,6 @@ export class Composer {
     commandButton.addEventListener("click", () => this.openTriggerManually("command", "/"));
     this.hintEl = bar.createDiv({ cls: "dsh-composer-hint" });
     this.hintEl.setText(IDLE_HINT);
-    this.sendButton = bar.createEl("button", { cls: "dsh-send-btn mod-cta" });
-    this.sendButton.setText("发送");
-    this.sendButton.addEventListener("click", () => this.submit());
 
     this.editor.addEventListener("input", () => this.onInput());
     this.editor.addEventListener("keydown", (ev: KeyboardEvent) => this.onKeydown(ev));
