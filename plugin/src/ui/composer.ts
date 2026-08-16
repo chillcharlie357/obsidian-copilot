@@ -4,7 +4,7 @@
  * - 提交时序列化回 `@[名称](路径)` 语法，下游逻辑不变
  * - @/slash 触发、行内选择器、键盘导航全部在侧边栏内部完成
  */
-import { Platform, setIcon } from "obsidian";
+import { setIcon } from "obsidian";
 import type DshCopilotPlugin from "../main.js";
 import { InlinePicker, type PickerItem } from "./picker.js";
 
@@ -30,7 +30,7 @@ export interface ComposerOptions {
 const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
 
 const IDLE_HINT = "Enter 发送 · Shift+Enter 换行 · @ 引用 · / 命令";
-const BUSY_HINT = `${Platform.isMacOS ? "Cmd" : "Ctrl"}+Enter 追加消息 · 点击「停止」中断`;
+const BUSY_HINT = "Enter 继续发送（排队）· 点击「停止」中断";
 
 export function parseMentions(text: string): Mention[] {
   const mentions: Mention[] = [];
@@ -76,7 +76,10 @@ export class Composer {
     // 发送/停止按钮放在输入框右侧（抬高位置、增大点击面积，避免底边冲突）
     this.sendButton = box.createEl("button", { cls: "dsh-send-btn mod-cta" });
     this.sendButton.setText("发送");
-    this.sendButton.addEventListener("click", () => this.submit());
+    this.sendButton.addEventListener("click", () => {
+      if (this.busy) this.options.onStop();
+      else this.submit();
+    });
 
     const bar = container.createDiv({ cls: "dsh-composer-bar" });
     const mentionButton = bar.createEl("button", { cls: "dsh-icon-btn", attr: { "aria-label": "@引用文件" } });
@@ -167,11 +170,7 @@ export class Composer {
     }
     if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
       ev.preventDefault();
-      if (this.busy) {
-        // 忙时：Cmd/Ctrl+Enter 排队追加消息；普通 Enter 忽略（停止请点按钮，防止误触）
-        if (ev.metaKey || ev.ctrlKey) this.submit(true);
-        return;
-      }
+      // 忙时 Enter 也发送（排队追加），停止只通过按钮触发，避免无反应
       this.submit();
     }
   }
@@ -328,11 +327,7 @@ export class Composer {
     return out.replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  private submit(force = false): void {
-    if (this.busy && !force) {
-      this.options.onStop();
-      return;
-    }
+  private submit(): void {
     const text = this.serialize();
     if (!text) return;
     this.editor.empty();

@@ -338,8 +338,13 @@ export class AcpServer {
     }
     if (payload.type === "host/agent-error") {
       const ctx = this.sessions.get(payload.sessionId);
-      if (ctx?.active && !ctx.active.errorMessage) {
+      if (!ctx) return;
+      if (ctx.active && !ctx.active.errorMessage) {
         ctx.active.errorMessage = payload.message;
+      }
+      // 快速失败：agent 报错时立即结算所有等待中的 prompt，避免客户端卡死
+      if (ctx.pending.length > 0) {
+        this.failPending(ctx, new RpcError(ERR_AGENT_UNAVAILABLE, `agent error: ${payload.message}`));
       }
     }
   }

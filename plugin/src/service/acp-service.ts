@@ -312,8 +312,19 @@ export class AcpService {
   }
 
   cancel(threadId: string, sessionId: string): void {
-    const peer = this.ensurePeer();
-    peer.notify("session/cancel", { sessionId });
+    try {
+      const peer = this.ensurePeer();
+      peer.notify("session/cancel", { sessionId });
+    } catch (error) {
+      console.error("[obsidian-copilot] 取消请求失败:", error);
+    }
+    // 乐观取消：立即解锁 UI（即使后续事件流/响应异常，也不会卡在忙状态）
+    const state = this.threadState(threadId);
+    if (state.busy) {
+      state.blocks = finishStreaming(state.blocks);
+      state.busy = false;
+      this.emit("prompt-done", { threadId, sessionId, stopReason: "cancelled" });
+    }
     this.emit("prompt-cancelling", { threadId, sessionId });
   }
 

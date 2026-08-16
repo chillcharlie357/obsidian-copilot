@@ -377,6 +377,24 @@ export class ChatView extends ItemView {
   // -------------------------------------------------------------------------
 
   private async send(rawText: string, mentions: Mention[]): Promise<void> {
+    try {
+      await this.doSend(rawText, mentions);
+    } catch (error) {
+      console.error("[obsidian-copilot] 发送失败:", error);
+      new Notice(`Obsidian Copilot：发送失败（${error instanceof Error ? error.message : String(error)}）`);
+      const threadId = this.activeThreadId;
+      if (threadId) {
+        this.service.threadState(threadId).blocks.blocks.push({
+          kind: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        this.scheduleRender();
+      }
+      this.composer.setBusy(false);
+    }
+  }
+
+  private async doSend(rawText: string, mentions: Mention[]): Promise<void> {
     const threadId = this.activeThreadId;
     if (!threadId) return;
     const record = this.threads.get(threadId);
