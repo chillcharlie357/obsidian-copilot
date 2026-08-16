@@ -74,8 +74,8 @@ export class Composer {
       },
     });
     // 发送/停止按钮放在输入框右侧（抬高位置、增大点击面积，避免底边冲突）
-    this.sendButton = box.createEl("button", { cls: "dsh-send-btn mod-cta" });
-    this.sendButton.setText("发送");
+    this.sendButton = box.createEl("button", { cls: "dsh-send-btn mod-cta", attr: { "aria-label": "发送" } });
+    setIcon(this.sendButton, "arrow-up");
     this.sendButton.addEventListener("click", () => {
       if (this.busy) this.options.onStop();
       else this.submit();
@@ -343,13 +343,16 @@ export class Composer {
   setBusy(busy: boolean): void {
     if (this.busy === busy) return;
     this.busy = busy;
+    this.sendButton.empty();
     if (busy) {
-      this.sendButton.setText("停止");
+      setIcon(this.sendButton, "square");
+      this.sendButton.setAttr("aria-label", "停止");
       this.sendButton.removeClass("mod-cta");
       this.sendButton.addClass("dsh-stop-btn");
       this.hintEl.setText(BUSY_HINT);
     } else {
-      this.sendButton.setText("发送");
+      setIcon(this.sendButton, "arrow-up");
+      this.sendButton.setAttr("aria-label", "发送");
       this.sendButton.addClass("mod-cta");
       this.sendButton.removeClass("dsh-stop-btn");
       this.hintEl.setText(IDLE_HINT);

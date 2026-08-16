@@ -516,10 +516,15 @@
 
 .dsh-send-btn {
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   min-height: 40px;
-  min-width: 64px;
-  padding: 0 16px;
-  font-size: var(--font-ui-small);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
 }
 
 .dsh-stop-btn {
