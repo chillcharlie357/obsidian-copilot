@@ -580,7 +580,6 @@ export class AcpServer {
       beforeSeq = minSeq;
     }
 
-    const chunkedKeys = new Map<string, string>();
     for (const entry of pages.flat()) {
       const event = entry.event;
       switch (event.type) {
@@ -596,33 +595,13 @@ export class AcpServer {
           }
           break;
         }
-        case "assistant/chunk": {
-          const chunk = (event.data as { chunk?: { type?: string; text?: string } }).chunk;
-          if (chunk?.type === "text-delta" && typeof chunk.text === "string") {
-            const turn = (event.data as { turn?: number }).turn;
-            const step = (event.data as { step?: number }).step;
-            const key = `${String(turn)}:${String(step)}`;
-            chunkedKeys.set(key, (chunkedKeys.get(key) ?? "") + chunk.text);
-          }
-          break;
-        }
         case "assistant/message": {
+          // 重放路径：chunk 从未发出过，直接以完整消息文本重放一次
           const text = textOfMessageEvent(event as never);
-          if (text === "") break;
-          const turn = (event.data as { turn?: number }).turn;
-          const step = (event.data as { step?: number }).step;
-          const key = `${String(turn)}:${String(step)}`;
-          const chunked = chunkedKeys.get(key);
-          // 优先重放 chunk 级文本；无 chunk 时用完整消息
-          if (chunked === undefined) {
+          if (text !== "") {
             this.notifyUpdate(ctx.sessionId, {
               sessionUpdate: "agent_message_chunk",
               content: { type: "text", text },
-            });
-          } else if (chunked !== text) {
-            this.notifyUpdate(ctx.sessionId, {
-              sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: text.slice(chunked.length) },
             });
           }
           break;
