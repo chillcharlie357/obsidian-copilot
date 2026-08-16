@@ -1,6 +1,6 @@
 {
-	"id": "dsh-copilot",
-	"name": "DSH Copilot",
+	"id": "obsidian-copilot",
+	"name": "Obsidian Copilot",
 	"version": "0.1.0",
 	"minAppVersion": "1.5.0",
 	"description": "通过 ACP 协议连接 DeepSeek Harness（或任意 ACP agent）：侧边栏对话、@引用笔记、让 agent 直接修改你的 vault。",

@@ -1,9 +1,9 @@
 {
-  "name": "dsh-obsidian-plugin",
+  "name": "obsidian-copilot-plugin",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DSH Copilot — Obsidian 侧边栏 AI 助手（ACP 客户端）",
+  "description": "Obsidian Copilot — Obsidian 侧边栏 AI 助手（ACP 客户端）",
   "scripts": {
     "build": "node esbuild.config.mjs",
     "dev": "node esbuild.config.mjs --watch",

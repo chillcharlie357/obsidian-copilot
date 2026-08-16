@@ -1,5 +1,5 @@
 /**
- * DSH Copilot — Obsidian 插件入口。
+ * Obsidian Copilot — Obsidian 插件入口。
  * 通过 ACP（Agent Client Protocol）连接 agent（默认 dsh-acp-adapter → DeepSeek Harness）。
  */
 import { Component, FileSystemAdapter, Plugin, type TAbstractFile } from "obsidian";
@@ -33,13 +33,13 @@ export default class DshCopilotPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 
-    this.addRibbonIcon("bot", "打开 DSH Copilot", () => {
+    this.addRibbonIcon("bot", "打开 Obsidian Copilot", () => {
       void this.activateView();
     });
 
     this.addCommand({
-      id: "open-dsh-copilot",
-      name: "打开 DSH Copilot 侧边栏",
+      id: "open-obsidian-copilot",
+      name: "打开 Obsidian Copilot 侧边栏",
       callback: () => void this.activateView(),
     });
 

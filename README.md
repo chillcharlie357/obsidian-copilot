@@ -1,9 +1,11 @@
-# DSH Copilot（Obsidian 插件）
+# Obsidian Copilot（Obsidian 插件）
 
 > 通过 **ACP（Agent Client Protocol）** 连接 agent 的 Obsidian 侧边栏 Copilot 插件。
 > 首个后端适配器将 ACP 语义映射到 **DeepSeek Harness（DSH）** 的 Web API；
 > 由于插件与 agent 之间是通用 ACP 语义，未来可直接接入任何支持 ACP 的 agent
 > （如 Zed 生态的 ACP agent），只需在设置中更换启动命令。
+>
+> 仓库：[github.com/chillcharlie357/obsidian-copilot](https://github.com/chillcharlie357/obsidian-copilot)
 
 ## 能力
 
@@ -61,8 +63,8 @@ pnpm install
 pnpm build            # 构建 adapter（dist/dsh-acp-adapter.cjs）并复制进 plugin/dist/adapter.cjs
 
 # plugin/dist/ 是完整可安装的插件目录（main.js、adapter.cjs、manifest.json、styles.css、versions.json）
-# 将整个 plugin/dist/ 复制到你的 vault：<vault>/.obsidian/plugins/dsh-copilot/
-# 然后重启 Obsidian 并在「第三方插件」中启用 DSH Copilot。
+# 将整个 plugin/dist/ 复制到你的 vault：<vault>/.obsidian/plugins/obsidian-copilot/
+# 然后重启 Obsidian 并在「第三方插件」中启用 Obsidian Copilot。
 ```
 
 插件设置：

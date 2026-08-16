@@ -73,7 +73,7 @@ export class AcpService {
       try {
         listener(event, payload);
       } catch (error) {
-        console.error("[dsh-copilot] listener error", error);
+        console.error("[obsidian-copilot] listener error", error);
       }
     }
   }
@@ -138,7 +138,7 @@ export class AcpService {
       if (line) console.log("[dsh-acp-adapter]", line);
     });
     child.on("exit", (code) => {
-      console.log(`[dsh-copilot] adapter 退出 code=${String(code)}`);
+      console.log(`[obsidian-copilot] adapter 退出 code=${String(code)}`);
       this.child = null;
       this.peer = null;
       if (this.disposed) {
@@ -153,7 +153,7 @@ export class AcpService {
         }, 2000 * this.restartAttempts);
       } else {
         this.setStatus("offline");
-        new Notice("DSH Copilot：agent 进程多次退出，已停止重试（可在设置中调整后重启）");
+        new Notice("Obsidian Copilot：agent 进程多次退出，已停止重试（可在设置中调整后重启）");
       }
     });
     peer.start();
@@ -166,7 +166,7 @@ export class AcpService {
             fs: { readTextFile: true, writeTextFile: true },
             terminal: false,
           },
-          clientInfo: { name: "dsh-copilot", title: "DSH Copilot (Obsidian)", version: "0.1.0" },
+          clientInfo: { name: "obsidian-copilot", title: "Obsidian Copilot", version: "0.1.0" },
         },
         10_000
       )) as { protocolVersion: number; agentCapabilities?: AgentCapabilities; agentInfo?: unknown };
@@ -175,10 +175,10 @@ export class AcpService {
       this.setStatus("ready");
       this.emit("agent-info", result.agentInfo ?? {});
     } catch (error) {
-      console.error("[dsh-copilot] initialize 失败:", error);
+      console.error("[obsidian-copilot] initialize 失败:", error);
       this.stopAdapter();
       this.setStatus("offline");
-      new Notice(`DSH Copilot：无法连接 agent（${error instanceof Error ? error.message : String(error)}）`);
+      new Notice(`Obsidian Copilot：无法连接 agent（${error instanceof Error ? error.message : String(error)}）`);
     }
   }
 

@@ -20,7 +20,7 @@ import { Composer, type Mention } from "./composer.js";
 import { renderBlocks } from "./render.js";
 import { uuid } from "../util.js";
 
-export const VIEW_TYPE = "dsh-copilot-view";
+export const VIEW_TYPE = "obsidian-copilot-view";
 
 export class ChatView extends ItemView {
   private headerStatusEl!: HTMLElement;
@@ -43,7 +43,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "DSH Copilot";
+    return "Obsidian Copilot";
   }
 
   getIcon(): string {
@@ -70,7 +70,7 @@ export class ChatView extends ItemView {
     newButton.addEventListener("click", () => void this.newThread());
 
     this.titleEl = header.createDiv({ cls: "dsh-title" });
-    this.titleEl.setText("DSH Copilot");
+    this.titleEl.setText("Obsidian Copilot");
 
     this.headerStatusEl = header.createDiv({ cls: "dsh-status" });
     this.headerStatusEl.setAttr("data-state", "idle");
@@ -204,7 +204,7 @@ export class ChatView extends ItemView {
         blocks: [...state.blocks.blocks, { kind: "error", message: error instanceof Error ? error.message : String(error) }],
         streaming: false,
       };
-      new Notice(`DSH Copilot：会话加载失败（${error instanceof Error ? error.message : String(error)}）`);
+      new Notice(`Obsidian Copilot：会话加载失败（${error instanceof Error ? error.message : String(error)}）`);
     } finally {
       state.replaying = false;
       this.composer.setBusy(state.busy);
@@ -268,7 +268,7 @@ export class ChatView extends ItemView {
         await this.threads.setSessionId(threadId, sessionId);
         this.service.bindSession(threadId, sessionId);
       } catch (error) {
-        new Notice(`DSH Copilot：创建会话失败（${error instanceof Error ? error.message : String(error)}）`);
+        new Notice(`Obsidian Copilot：创建会话失败（${error instanceof Error ? error.message : String(error)}）`);
         return;
       }
     }
