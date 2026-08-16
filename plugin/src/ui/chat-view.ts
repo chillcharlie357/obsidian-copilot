@@ -568,11 +568,16 @@ export class ChatView extends ItemView {
   // 右键划词 / 文件拖拽：把上下文插入输入框
   // -------------------------------------------------------------------------
 
-  /** 编辑器划选文本 → 「添加到 Copilot」右键菜单入口。 */
+  /** 编辑器/阅读视图划选文本 → 「添加到 Copilot」入口。 */
   insertSelectionContext(file: TFile | null, selection: string, fromLine: number, toLine: number): void {
     const name = file?.basename ?? "当前笔记";
     const path = file?.path ?? "";
-    const source = path === "" ? `第 ${fromLine}–${toLine} 行` : `${path} 第 ${fromLine}–${toLine} 行`;
+    let source: string;
+    if (fromLine < 1) {
+      source = path === "" ? "阅读视图选段" : `${path}（阅读视图选段）`;
+    } else {
+      source = path === "" ? `第 ${fromLine}–${toLine} 行` : `${path} 第 ${fromLine}–${toLine} 行`;
+    }
     this.composer.insertSelectionContext(name, path, selection, source);
     this.composer.focus();
   }
