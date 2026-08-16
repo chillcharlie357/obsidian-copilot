@@ -1,18 +1,14 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DshCopilotPlugin from "./main.js";
 import { DEFAULT_SYSTEM_PROMPT, SYSTEM_PROMPT_RESET_LABEL } from "./service/preamble.js";
+import { builtinDshProfile, type AgentProfile } from "./service/profiles.js";
+import { uuid } from "./util.js";
 
 export interface DshCopilotSettings {
-  /** DSH web API 地址（传给适配器） */
-  dsn: string;
-  /** DSH 未运行时自动启动 dsh web */
-  autoStartDsh: boolean;
-  /** dsh 可执行文件（留空自动探测） */
-  dshBin: string;
-  /** node 可执行文件（留空自动探测，GUI 启动时 PATH 里通常没有） */
-  nodeBin: string;
-  /** 适配器退出时关闭由它启动的 DSH */
-  killDshOnExit: boolean;
+  /** agent profile 列表（DSH 为内置预设之一，可新增任意 ACP agent） */
+  profiles: AgentProfile[];
+  /** 当前激活的 profile id */
+  activeProfileId: string;
   /** @引用文件内嵌内容的最大字符数 */
   maxMentionChars: number;
   /** 文件夹 @ 引用最多内嵌的笔记篇数 */
@@ -24,11 +20,8 @@ export interface DshCopilotSettings {
 }
 
 export const DEFAULT_SETTINGS: DshCopilotSettings = {
-  dsn: "http://127.0.0.1:3080",
-  autoStartDsh: true,
-  dshBin: "",
-  nodeBin: "",
-  killDshOnExit: true,
+  profiles: [builtinDshProfile()],
+  activeProfileId: builtinDshProfile().id,
   maxMentionChars: 12000,
   maxFolderFiles: 30,
   showReasoning: true,
@@ -48,49 +41,76 @@ export class DshCopilotSettingTab extends PluginSettingTab {
     containerEl.empty();
     const settings = this.plugin.settings;
 
-    new Setting(containerEl).setName("DSH 服务地址").setDesc("DSH web API 的 HTTP 地址（ACP 适配器通过它连接 DeepSeek Harness）").addText((text) =>
-      text
-        .setPlaceholder("http://127.0.0.1:3080")
-        .setValue(settings.dsn)
-        .onChange(async (value) => {
-          settings.dsn = value.trim() || DEFAULT_SETTINGS.dsn;
-          await this.plugin.saveSettings();
-        })
-    );
+    // -----------------------------------------------------------------------
+    // Agent Profile
+    // -----------------------------------------------------------------------
+    new Setting(containerEl).setName("Agent Profile").setHeading();
 
-    new Setting(containerEl).setName("自动启动 DSH").setDesc("DSH 未运行时，由适配器自动在后台启动 dsh web（工作目录为当前 vault）").addToggle((toggle) =>
-      toggle.setValue(settings.autoStartDsh).onChange(async (value) => {
-        settings.autoStartDsh = value;
+    const profiles = settings.profiles.length > 0 ? settings.profiles : [builtinDshProfile()];
+    const active = profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0]!;
+
+    new Setting(containerEl).setName("当前 agent").setDesc("选择要连接的 ACP agent；切换后自动重连").addDropdown((dropdown) => {
+      for (const profile of profiles) dropdown.addOption(profile.id, profile.name);
+      dropdown.setValue(active.id);
+      dropdown.onChange(async (value) => {
+        settings.activeProfileId = value;
         await this.plugin.saveSettings();
+        const selected = profiles.find((p) => p.id === value);
+        new Notice(`已切换到「${selected?.name ?? value}」，正在重连…`);
+        await this.plugin.service.restart();
+      });
+    });
+
+    for (const profile of profiles) {
+      const item = new Setting(containerEl)
+        .setName(profile.name)
+        .setDesc(`${profile.description ?? "自定义 agent"}${profile.builtin ? "（内置预设）" : ""}`)
+        .addButton((button) =>
+          button.setButtonText("编辑").onClick(() => {
+            new ProfileEditorModal(this.app, this.plugin, profile).open();
+          })
+        )
+        .addButton((button) =>
+          button.setButtonText("复制").onClick(async () => {
+            const copy: AgentProfile = {
+              ...profile,
+              id: uuid(),
+              name: `${profile.name}（副本）`,
+              builtin: undefined,
+            };
+            settings.profiles.push(copy);
+            settings.activeProfileId = copy.id;
+            await this.plugin.saveSettings();
+            new Notice(`已复制为「${copy.name}」，正在重连…`);
+            await this.plugin.service.restart();
+            this.display();
+          })
+        );
+      if (!profile.builtin) {
+        item.addButton((button) =>
+          button.setButtonText("删除").setWarning().onClick(async () => {
+            settings.profiles = settings.profiles.filter((p) => p.id !== profile.id);
+            if (settings.activeProfileId === profile.id) {
+              settings.activeProfileId = settings.profiles[0]?.id ?? builtinDshProfile().id;
+            }
+            await this.plugin.saveSettings();
+            await this.plugin.service.restart();
+            this.display();
+          })
+        );
+      }
+    }
+
+    new Setting(containerEl).setName("新建 profile").setDesc("接入任意支持 ACP 的 agent（如 codex acp、zed 等），或自定义命令").addButton((button) =>
+      button.setButtonText("新建").onClick(() => {
+        new ProfileEditorModal(this.app, this.plugin, null).open();
       })
     );
 
-    new Setting(containerEl).setName("dsh 可执行文件").setDesc("用于自动启动的 dsh 命令路径；留空自动探测（Homebrew/pnpm 等常见位置）").addText((text) =>
-      text
-        .setPlaceholder("自动探测（如 /opt/homebrew/bin/dsh）")
-        .setValue(settings.dshBin)
-        .onChange(async (value) => {
-          settings.dshBin = value.trim();
-          await this.plugin.saveSettings();
-        })
-    );
-
-    new Setting(containerEl).setName("node 可执行文件").setDesc("运行适配器用的 node 路径；留空自动探测，找不到时回退到 Electron Node 模式").addText((text) =>
-      text
-        .setPlaceholder("自动探测（如 /opt/homebrew/bin/node）")
-        .setValue(settings.nodeBin)
-        .onChange(async (value) => {
-          settings.nodeBin = value.trim();
-          await this.plugin.saveSettings();
-        })
-    );
-
-    new Setting(containerEl).setName("退出时关闭 DSH").setDesc("插件卸载/禁用时，是否关闭由适配器启动的 DSH 进程（不影响手动启动的服务）").addToggle((toggle) =>
-      toggle.setValue(settings.killDshOnExit).onChange(async (value) => {
-        settings.killDshOnExit = value;
-        await this.plugin.saveSettings();
-      })
-    );
+    // -----------------------------------------------------------------------
+    // 引用与上下文
+    // -----------------------------------------------------------------------
+    new Setting(containerEl).setName("引用与上下文").setHeading();
 
     new Setting(containerEl).setName("@引用内容上限").setDesc("通过 @ 引用文件时内嵌进上下文的最大字符数（超出部分 agent 可用工具自行读取）").addText((text) =>
       text
@@ -121,8 +141,13 @@ export class DshCopilotSettingTab extends PluginSettingTab {
       })
     );
 
+    // -----------------------------------------------------------------------
+    // 系统提示词
+    // -----------------------------------------------------------------------
+    new Setting(containerEl).setName("会话系统提示词").setHeading();
+
     new Setting(containerEl)
-      .setName("会话系统提示词")
+      .setName("系统提示词")
       .setDesc("在每个新会话的第一条消息前注入（聊天界面不可见）。针对 Obsidian 场景优化 agent 行为；清空即关闭注入。")
       .addTextArea((area) => {
         area
@@ -145,10 +170,86 @@ export class DshCopilotSettingTab extends PluginSettingTab {
       })
     );
 
-    new Setting(containerEl).setName("重新连接 agent").setDesc("重启 ACP 适配器进程（设置修改后生效）").addButton((button) =>
+    new Setting(containerEl).setName("重新连接 agent").setDesc("重启当前 agent profile 进程（profile 修改后生效）").addButton((button) =>
       button.setButtonText("重启").onClick(async () => {
         await this.plugin.service.restart();
       })
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Profile 编辑弹窗
+// ---------------------------------------------------------------------------
+
+class ProfileEditorModal extends Modal {
+  private nameEl!: HTMLInputElement;
+  private commandEl!: HTMLTextAreaElement;
+
+  constructor(
+    app: App,
+    private readonly plugin: DshCopilotPlugin,
+    private readonly profile: AgentProfile | null
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass("dsh-profile-editor");
+    contentEl.createEl("h3", { text: this.profile ? "编辑 Agent Profile" : "新建 Agent Profile" });
+
+    new Setting(contentEl).setName("名称").setDesc("在设置页和状态中显示的 profile 名称").addText((text) => {
+      this.nameEl = text.inputEl;
+      text.setPlaceholder("如：DeepSeek Harness（DSH）").setValue(this.profile?.name ?? "");
+    });
+
+    new Setting(contentEl)
+      .setName("启动命令")
+      .setDesc(
+        "ACP agent 的启动命令（stdio 传输）。可用占位符：{adapter} 内置适配器路径、{vault} vault 根目录；路径含空格时用引号包裹。示例：node \"{adapter}\" --dsn http://127.0.0.1:3080"
+      )
+      .addTextArea((area) => {
+        this.commandEl = area.inputEl;
+        this.commandEl.rows = 5;
+        this.commandEl.addClass("dsh-settings-prompt");
+        area.setPlaceholder('node "{adapter}" --dsn http://127.0.0.1:3080').setValue(this.profile?.command ?? "");
+      });
+
+    if (!this.profile) {
+      const template = contentEl.createDiv({ cls: "setting-item-description" });
+      template.setText("常用模板：DSH 默认 / codex acp / zed --acp …");
+    }
+
+    const bar = contentEl.createDiv({ cls: "dsh-profile-actions" });
+    const saveButton = bar.createEl("button", { cls: "mod-cta", text: "保存" });
+    saveButton.addEventListener("click", async () => {
+      const name = this.nameEl.value.trim();
+      const command = this.commandEl.value.trim();
+      if (!name || !command) {
+        new Notice("名称与启动命令不能为空");
+        return;
+      }
+      const settings = this.plugin.settings;
+      if (this.profile) {
+        this.profile.name = name;
+        this.profile.command = command;
+      } else {
+        const created: AgentProfile = { id: uuid(), name, command };
+        settings.profiles.push(created);
+        settings.activeProfileId = created.id;
+      }
+      await this.plugin.saveSettings();
+      this.close();
+      new Notice(`Profile「${name}」已保存，正在重连…`);
+      await this.plugin.service.restart();
+      this.plugin.settingTab?.display();
+    });
+    const cancelButton = bar.createEl("button", { text: "取消" });
+    cancelButton.addEventListener("click", () => this.close());
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }

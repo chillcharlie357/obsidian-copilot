@@ -72,9 +72,8 @@ pnpm build            # 构建 adapter（dist/dsh-acp-adapter.cjs）并复制进
 
 插件设置：
 
-- **DSH 服务地址**：默认 `http://127.0.0.1:3080`（与 `dsh web` 默认端口一致，可复用正在运行的 Web GUI）
-- **自动启动 DSH**：未运行时由适配器后台启动 `dsh web`
-- **dsh 可执行文件**、**node 可执行文件**、**退出时关闭 DSH**、**@引用内容上限**、**显示推理过程**
+- **Agent Profile**：可选的 agent 后端列表，DSH 只是内置预设之一。每个 profile 是一条启动命令（支持 `{adapter}`、`{vault}` 占位符），可新增/编辑/复制/删除——任何支持 ACP stdio 的 agent（如 `codex acp`、`zed --acp`）都能接入；切换后自动重连
+- **@引用内容上限**、**文件夹引用篇数上限**、**显示推理过程**
 - **会话系统提示词**：每个新会话首条消息前注入（聊天界面不可见），内置针对 Obsidian 场景优化的默认值（wiki 链接保留、frontmatter 约定、先搜索后新建、不碰 .obsidian 等），可自定义或清空关闭
 
 ## 开发

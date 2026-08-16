@@ -23,7 +23,8 @@ import {
 import { Notice, type App } from "obsidian";
 import { applyUpdate, emptyThread, finishStreaming, type ThreadBlocks } from "./model.js";
 import { isPathInside, normalizePathAbs, relativeTo } from "../util.js";
-import { electronNodeFallback, resolveDshBin, resolveNodeBin } from "./bins.js";
+import { electronNodeFallback, resolveNodeBin } from "./bins.js";
+import { builtinDshProfile, expandCommand, type AgentProfile } from "./profiles.js";
 
 export type ServiceStatus = "idle" | "starting" | "ready" | "offline";
 
@@ -37,11 +38,10 @@ export interface PermissionRequestInfo {
 }
 
 export interface AcpSettings {
-  dsn: string;
-  autoStartDsh: boolean;
-  dshBin: string;
-  nodeBin: string;
-  killDshOnExit: boolean;
+  /** agent profile 列表 */
+  profiles: AgentProfile[];
+  /** 当前激活的 profile id */
+  activeProfileId: string;
   maxMentionChars: number;
   /** 文件夹 @ 引用最多内嵌的笔记篇数 */
   maxFolderFiles: number;
@@ -89,6 +89,13 @@ export class AcpService {
     return this.status;
   }
 
+  /** 当前激活的 agent profile（兜底内置 DSH 预设） */
+  activeProfile(): AgentProfile {
+    const profiles = this.settings.profiles;
+    const active = profiles.find((p) => p.id === this.settings.activeProfileId);
+    return active ?? profiles[0] ?? builtinDshProfile();
+  }
+
   getCapabilities(): AgentCapabilities | null {
     return this.capabilities;
   }
@@ -120,32 +127,34 @@ export class AcpService {
   private async startAdapter(): Promise<void> {
     this.setStatus("starting");
 
-    // node 二进制解析：GUI 启动的 Obsidian PATH 里通常没有 Homebrew
-    let command = resolveNodeBin(this.settings.nodeBin);
-    let env = { ...process.env };
-    if (!command) {
-      const fallback = electronNodeFallback();
-      command = fallback.command;
-      env = fallback.env;
-      console.log("[obsidian-copilot] 未找到 node，回退到 ELECTRON_RUN_AS_NODE");
+    // 解析当前 agent profile 的启动命令（支持 {adapter} {vault} 占位符）
+    const profile = this.activeProfile();
+    let args = expandCommand(profile.command, {
+      adapter: this.adapterPath,
+      vault: this.vaultRoot,
+    });
+    if (args.length === 0) {
+      this.setStatus("offline");
+      new Notice(`Obsidian Copilot：agent profile「${profile.name}」的启动命令为空`);
+      return;
     }
-    const dshBin = resolveDshBin(this.settings.dshBin) ?? this.settings.dshBin ?? "dsh";
 
-    const child = spawn(
-      command,
-      [
-        this.adapterPath,
-        "--dsn",
-        this.settings.dsn,
-        "--auto-start-dsh",
-        this.settings.autoStartDsh ? "true" : "false",
-        "--dsh-bin",
-        dshBin,
-        "--kill-dsh-on-exit",
-        this.settings.killDshOnExit ? "true" : "false",
-      ],
-      { stdio: ["pipe", "pipe", "pipe"], env }
-    );
+    // node 二进制解析：GUI 启动的 Obsidian PATH 里通常没有 Homebrew；
+    // 命令以 `node` 开头时自动替换为绝对路径（找不到则回退 Electron Node 模式）
+    let env = { ...process.env };
+    if (args[0] === "node") {
+      const resolved = resolveNodeBin();
+      if (resolved) {
+        args[0] = resolved;
+      } else {
+        const fallback = electronNodeFallback();
+        args[0] = fallback.command;
+        env = fallback.env;
+        console.log("[obsidian-copilot] 未找到 node，回退到 ELECTRON_RUN_AS_NODE");
+      }
+    }
+
+    const child = spawn(args[0] ?? "", args.slice(1), { stdio: ["pipe", "pipe", "pipe"], env });
     this.child = child;
     const stream = new StdioStream(child.stdout, child.stdin);
     const peer = new Peer(stream, { requestTimeoutMs: 0 });

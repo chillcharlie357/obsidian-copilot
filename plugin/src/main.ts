@@ -1,17 +1,20 @@
 /**
  * Obsidian Copilot — Obsidian 插件入口。
- * 通过 ACP（Agent Client Protocol）连接 agent（默认 dsh-acp-adapter → DeepSeek Harness）。
+ * 通过 ACP（Agent Client Protocol）连接 agent：
+ * 内置 DSH 预设（dsh-acp-adapter → DeepSeek Harness），也支持任意 ACP agent profile。
  */
-import { Component, FileSystemAdapter, Plugin, type TAbstractFile } from "obsidian";
+import { Component, FileSystemAdapter, Plugin } from "obsidian";
 import { AcpService } from "./service/acp-service.js";
 import { ThreadStore } from "./service/threads.js";
 import { ChatView, VIEW_TYPE } from "./ui/chat-view.js";
 import { DEFAULT_SETTINGS, DshCopilotSettingTab, type DshCopilotSettings } from "./settings.js";
+import { builtinDshProfile, migrateLegacyDshProfile } from "./service/profiles.js";
 
 export default class DshCopilotPlugin extends Plugin {
   declare settings: DshCopilotSettings;
   threads!: ThreadStore;
   service!: AcpService;
+  settingTab!: DshCopilotSettingTab;
   vaultRoot = "";
   adapterPath = "";
   private mdComponent: Component | null = null;
@@ -43,7 +46,8 @@ export default class DshCopilotPlugin extends Plugin {
       callback: () => void this.activateView(),
     });
 
-    this.addSettingTab(new DshCopilotSettingTab(this.app, this));
+    this.settingTab = new DshCopilotSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
 
     // 若启动即空闲则自动打开侧边栏
     this.app.workspace.onLayoutReady(() => {
@@ -71,7 +75,25 @@ export default class DshCopilotPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = (await this.loadData()) as Record<string, unknown> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+    // 旧版 DSH 硬编码设置 → 迁移为 profile（一次性）
+    const profiles = this.settings.profiles;
+    if (!Array.isArray(profiles) || profiles.length === 0) {
+      const legacy = stored as {
+        dsn?: string;
+        autoStartDsh?: boolean;
+        dshBin?: string;
+        killDshOnExit?: boolean;
+      } | null;
+      const migrated =
+        legacy && (legacy.dsn !== undefined || legacy.autoStartDsh !== undefined || legacy.dshBin !== undefined || legacy.killDshOnExit !== undefined)
+          ? migrateLegacyDshProfile(legacy)
+          : builtinDshProfile();
+      this.settings.profiles = [migrated];
+      this.settings.activeProfileId = migrated.id;
+      await this.saveSettings();
+    }
   }
 
   async saveSettings(): Promise<void> {
